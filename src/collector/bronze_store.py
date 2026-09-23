@@ -18,19 +18,19 @@ class BronzeStore:
     def __init__(self, dsn: str) -> None:
         self.conn = psycopg.connect(dsn)
 
-    def last_successful_end(self, source: str) -> date | None:
+    def last_successful_end(self, source: str, date_type: str) -> date | None:
         row = self.conn.execute(
             """SELECT max(date_end) FROM bronze.collection_runs
-               WHERE source = %s AND status = 'success'""",
-            (source,),
+               WHERE source = %s AND status = 'success' AND date_type = %s""",
+            (source, date_type),
         ).fetchone()
         return row[0] if row else None
 
-    def start_run(self, source: str, date_start: date, date_end: date) -> int:
+    def start_run(self, source: str, date_start: date, date_end: date, date_type: str) -> int:
         run_id = self.conn.execute(
-            """INSERT INTO bronze.collection_runs (source, date_start, date_end)
-               VALUES (%s, %s, %s) RETURNING run_id""",
-            (source, date_start, date_end),
+            """INSERT INTO bronze.collection_runs (source, date_start, date_end, date_type)
+               VALUES (%s, %s, %s, %s) RETURNING run_id""",
+            (source, date_start, date_end, date_type),
         ).fetchone()[0]
         self.conn.commit()
         return run_id
