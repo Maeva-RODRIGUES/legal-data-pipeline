@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import parse_qsl
 
 import httpx
 
@@ -33,12 +34,12 @@ class JudilibreClient:
         self.max_retries = max_retries
         self._sleep = sleep
 
-    def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+    def _get(self, path: str, params: dict[str, Any] | list[tuple[str, Any]]) -> dict[str, Any]:
         last_error: Exception | None = None
         for attempt in range(1, self.max_retries + 1):
             try:
                 response = self._http.get(path, params=params)
-            except httpx.TransportError as exc:  # coupure réseau, timeout…
+            except httpx.TransportError as exc:  # network failure, timeout...
                 last_error = exc
                 wait = min(2**attempt, 60)
             else:
@@ -60,29 +61,29 @@ class JudilibreClient:
             f"Échec après {self.max_retries} tentatives sur {path}"
         ) from last_error
 
-    def export(
+    def scan(
         self,
         date_start: str,
         date_end: str,
         batch_size: int = 100,
         **filters: Any,
     ) -> Iterator[dict[str, Any]]:
-
-        batch = 0
+        """Iterate over /scan between two dates by following the pagination cursor."""
+        base_params = {
+            "date_start": date_start,
+            "date_end": date_end,
+            "batch_size": batch_size,
+            **filters,
+        }
+        params = _as_pairs(base_params)
         while True:
-            params = {
-                "date_start": date_start,
-                "date_end": date_end,
-                "batch": batch,
-                "batch_size": batch_size,
-                **filters,
-            }
-            data = self._get("/export", params)
+            data = self._get("/scan", params)
             results = data.get("results", [])
             yield from results
-            if not results or not data.get("next_batch"):
+            next_batch = data.get("next_batch")
+            if not results or not next_batch:
                 return
-            batch += 1
+            params = _next_params(next_batch, base_params)
 
     def close(self) -> None:
         self._http.close()
@@ -92,3 +93,23 @@ class JudilibreClient:
 
     def __exit__(self, *exc) -> None:
         self.close()
+
+
+def _as_pairs(params: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Turn a dict into (key, value) pairs, one pair per list item."""
+    pairs: list[tuple[str, Any]] = []
+    for key, value in params.items():
+        if isinstance(value, list | tuple):
+            pairs.extend((key, item) for item in value)
+        else:
+            pairs.append((key, value))
+    return pairs
+
+
+def _next_params(next_batch: str, base_params: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Reuse the query params given by next_batch, adding back any filter the API omitted."""
+    query = next_batch.split("?", 1)[-1]
+    params: list[tuple[str, Any]] = parse_qsl(query, keep_blank_values=True)
+    present = {key for key, _ in params}
+    missing = {key: value for key, value in base_params.items() if key not in present}
+    return params + _as_pairs(missing)

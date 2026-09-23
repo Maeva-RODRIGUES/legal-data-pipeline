@@ -42,7 +42,7 @@ def main() -> None:
 
     try:
         with JudilibreClient(os.environ["JUDILIBRE_API_KEY"]) as client:
-            for decision in client.export(
+            for decision in client.scan(
                 start.isoformat(), end.isoformat(), batch_size=args.batch_size
             ):
                 counts["fetched"] += 1
