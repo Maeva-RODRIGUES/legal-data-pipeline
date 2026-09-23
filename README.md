@@ -11,7 +11,7 @@ Mini-pipeline de données juridiques : collecte (API + scraping), structuration 
 - **Bonus** : indexation Elasticsearch, API de recherche FastAPI, CI GitHub Actions.
 
 ## Avancement
-- [x] Étape 1a : collecteur Judilibre (pagination, reprises sur erreur, collecte incrémentale, journal des runs), testé sur données réelles
+- [x] Étape 1a : collecteur Judilibre (pagination, reprises sur erreur, collecte incrémentale, journal des runs), testé sur données réelles ; idempotence vérifiée (relance d'un run : 0 nouveau, 14 inchangés)
 - [x] Industrialisation : CI GitHub Actions (ruff + pytest), pre-commit, Dependabot, branche `main` protégée
 - [ ] Étape 1b : scraper d'une source publique
 - [ ] Étape 2 : couche Silver
