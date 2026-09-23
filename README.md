@@ -1,5 +1,7 @@
 # legal-data-pipeline
 
+![CI](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/actions/workflows/ci.yml/badge.svg)
+
 Mini-pipeline de données juridiques : collecte (API + scraping), structuration et contrôle qualité.
 
 ## Objectif
@@ -17,11 +19,12 @@ Mini-pipeline de données juridiques : collecte (API + scraping), structuration 
 
 ## Lancer le projet
 ```bash
-cp .env .env            # puis renseigner JUDILIBRE_API_KEY
-docker compose up -d            # PostgreSQL + création des tables
-pip install -r requirements.txt
+cp .env.example .env            # puis renseigner JUDILIBRE_API_KEY
+docker compose up -d
+pip install -r requirements-dev.txt
+pre-commit install
+pytest
 python -m src.collector.run --start 2026-09-01 --end 2026-09-07
-python -m src.collector.run     # incrémental : reprend après le dernier run réussi
 ```
 
 ## Méthode de travail
