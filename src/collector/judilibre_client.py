@@ -22,7 +22,7 @@ class JudilibreClient:
         max_retries: int = 5,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,  # inject for tests
-        sleep=time.sleep,                               # inject for tests
+        sleep=time.sleep,  # inject for tests
     ) -> None:
         self._http = httpx.Client(
             base_url=base_url,
@@ -40,7 +40,7 @@ class JudilibreClient:
                 response = self._http.get(path, params=params)
             except httpx.TransportError as exc:  # coupure réseau, timeout…
                 last_error = exc
-                wait = min(2 ** attempt, 60)
+                wait = min(2**attempt, 60)
             else:
                 if response.status_code == 200:
                     return response.json()
@@ -50,9 +50,15 @@ class JudilibreClient:
                     )
                 last_error = JudilibreError(f"HTTP {response.status_code} sur {path}")
                 retry_after = response.headers.get("Retry-After")
-                wait = int(retry_after) if retry_after and retry_after.isdigit() else min(2 ** attempt, 60)
+                wait = (
+                    int(retry_after)
+                    if retry_after and retry_after.isdigit()
+                    else min(2**attempt, 60)
+                )
             self._sleep(wait)
-        raise JudilibreError(f"Échec après {self.max_retries} tentatives sur {path}") from last_error
+        raise JudilibreError(
+            f"Échec après {self.max_retries} tentatives sur {path}"
+        ) from last_error
 
     def export(
         self,
@@ -81,7 +87,7 @@ class JudilibreClient:
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> "JudilibreClient":
+    def __enter__(self) -> JudilibreClient:
         return self
 
     def __exit__(self, *exc) -> None:

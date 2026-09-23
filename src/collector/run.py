@@ -42,7 +42,9 @@ def main() -> None:
 
     try:
         with JudilibreClient(os.environ["JUDILIBRE_API_KEY"]) as client:
-            for decision in client.export(start.isoformat(), end.isoformat(), batch_size=args.batch_size):
+            for decision in client.export(
+                start.isoformat(), end.isoformat(), batch_size=args.batch_size
+            ):
                 counts["fetched"] += 1
                 external_id = decision.get("id")
                 if not external_id:

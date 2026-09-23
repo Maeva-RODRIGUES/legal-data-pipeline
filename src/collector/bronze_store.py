@@ -62,7 +62,9 @@ class BronzeStore:
         )
         return "unchanged"
 
-    def finish_run(self, run_id: int, status: str, counts: dict[str, int], error: str | None = None) -> None:
+    def finish_run(
+        self, run_id: int, status: str, counts: dict[str, int], error: str | None = None
+    ) -> None:
         self.conn.execute(
             """UPDATE bronze.collection_runs
                SET finished_at = now(), status = %s, nb_fetched = %s, nb_new = %s, nb_changed = %s, error = %s

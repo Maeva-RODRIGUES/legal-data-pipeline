@@ -5,8 +5,12 @@ from src.collector.judilibre_client import JudilibreClient, JudilibreError
 
 
 def make_client(handler, max_retries=3):
-    return JudilibreClient("fake-key", transport=httpx.MockTransport(handler),
-                           max_retries=max_retries, sleep=lambda s: None)
+    return JudilibreClient(
+        "fake-key",
+        transport=httpx.MockTransport(handler),
+        max_retries=max_retries,
+        sleep=lambda s: None,
+    )
 
 
 def test_export_parcourt_toutes_les_pages():
