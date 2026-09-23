@@ -11,25 +11,27 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
 class JudilibreError(Exception):
+    """Permanent API error, or too many failed attempts."""
 
-    class JudilibreClient:
-        def __init__(
-            self,
-            api_key: str,
-            base_url: str = BASE_URL,
-            max_retries: int = 5,
-            timeout: float = 30.0,
-            transport: httpx.BaseTransport | None = None,  # inject for tests
-            sleep=time.sleep,                               # inject for tests
-        ) -> None:
-            self._http = httpx.Client(
-                base_url=base_url,
-                headers={"KeyId": api_key, "Accept": "application/json"},
-                timeout=timeout,
-                transport=transport,
-            )
-            self.max_retries = max_retries
-            self._sleep = sleep
+
+class JudilibreClient:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = BASE_URL,
+        max_retries: int = 5,
+        timeout: float = 30.0,
+        transport: httpx.BaseTransport | None = None,  # inject for tests
+        sleep=time.sleep,                               # inject for tests
+    ) -> None:
+        self._http = httpx.Client(
+            base_url=base_url,
+            headers={"KeyId": api_key, "Accept": "application/json"},
+            timeout=timeout,
+            transport=transport,
+        )
+        self.max_retries = max_retries
+        self._sleep = sleep
 
     def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         last_error: Exception | None = None
