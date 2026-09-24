@@ -1,7 +1,7 @@
 import io
 import json
 
-from src.collector.adlc_opendata import external_id, iter_decisions
+from src.collector.adlc_opendata.ingest import external_id, iter_decisions
 
 SAMPLE = [
     {

@@ -7,8 +7,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .adlc_opendata import SOURCE, download, external_id, iter_decisions
-from .bronze_store import BronzeStore
+from src.storage.bronze_store import BronzeStore
+
+from .ingest import SOURCE, download, external_id, iter_decisions
 
 DEFAULT_FILE = Path("data/raw/adlc-texte-complet-publications.json")
 

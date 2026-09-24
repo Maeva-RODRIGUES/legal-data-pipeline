@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from src.collector.judilibre_client import JudilibreClient, JudilibreError
+from src.collector.judilibre.client import JudilibreClient, JudilibreError
 
 
 def make_client(handler, max_retries=3):
