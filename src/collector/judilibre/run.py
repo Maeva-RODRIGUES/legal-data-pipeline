@@ -6,8 +6,9 @@ from datetime import date, timedelta
 
 from dotenv import load_dotenv
 
-from .bronze_store import BronzeStore
-from .judilibre_client import JudilibreClient
+from src.storage.bronze_store import BronzeStore
+
+from .client import JudilibreClient
 
 SOURCE = "judilibre"
 DEFAULT_WINDOW_DAYS = 7
