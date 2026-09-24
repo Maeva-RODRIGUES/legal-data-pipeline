@@ -2,10 +2,13 @@
 
 ![CI](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/actions/workflows/ci.yml/badge.svg)
 
-Mini-pipeline de données juridiques : collecte (API + scraping), structuration et contrôle qualité.
+Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration et contrôle qualité.
 
 ## Objectif
-- **Bronze** : collecter des décisions de justice depuis l'API Judilibre (Cour de cassation) et une source publique scrapée, stockées brutes dans PostgreSQL.
+- **Bronze** : collecter des décisions de justice et d'autorités administratives, stockées brutes dans PostgreSQL :
+  - API Judilibre (Cour de cassation) ;
+  - jeu de données open data de l'Autorité de la concurrence (data.gouv.fr) ;
+  - scraper du site de l'Autorité de la concurrence, pour détecter les décisions pas encore publiées en open data.
 - **Silver** : les ramener à un schéma commun (dédoublonnage, champs manquants, formats hétérogènes).
 - **Qualité** : mesurer l'écart entre ce qui est collecté et ce qui est exploitable.
 - **Bonus** : indexation Elasticsearch, API de recherche FastAPI.
@@ -14,7 +17,8 @@ Mini-pipeline de données juridiques : collecte (API + scraping), structuration 
 - [x] Étape 1a : collecteur Judilibre (pagination, reprises sur erreur, collecte incrémentale, journal des runs), testé sur données réelles ; idempotence vérifiée (relance d'un run : 0 nouveau, 14 inchangés)
 - [x] Industrialisation : CI GitHub Actions (ruff + pytest), pre-commit, Dependabot, branche `main` protégée
 - [x] Migration de `/export` (déprécié) vers `/scan`, avec `date_type` explicite
-- [ ] Étape 1b : scraper d'une source publique
+- [x] Étape 1b : ingestion du jeu de données open data de l'Autorité de la concurrence (6683 décisions, lecture en flux d'un JSON de 210 Mo, idempotence vérifiée)
+- [ ] Étape 1c : scraper de fraîcheur du site de l'Autorité de la concurrence
 - [ ] Étape 2 : couche Silver
 - [ ] Étape 3 : contrôles qualité
 - [ ] Étapes 4-5 : Elasticsearch, FastAPI
@@ -27,7 +31,10 @@ pip install -r requirements-dev.txt
 pre-commit install
 pytest
 python -m src.collector.run --start 2026-09-01 --end 2026-09-07
+python -m src.collector.run_adlc                 # fichier local : data/raw/adlc-texte-complet-publications.json
+python -m src.collector.run_adlc --url <URL>     # ou téléchargement préalable depuis data.gouv.fr
 ```
+Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargés, jamais versionnés.
 
 Options du collecteur : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100). Sans `--start`, la collecte reprend après le dernier run réussi du même type de date.
 
@@ -60,3 +67,11 @@ Spécification de référence : [`docs/api/`](docs/api/).
 
 **Questions ouvertes :**
 - Certaines décisions ont un contenu différent selon qu'elles sont obtenues par `/export` ou par `/scan`, ou ont été mises à jour entre deux runs. La couche Bronze écrasant l'ancienne version, la différence ne peut pas être analysée : piste pour une Bronze en append-only (historique des versions).
+
+### Autorité de la concurrence (open data)
+Documentation détaillée : [`docs/sources/autorite-concurrence.md`](docs/sources/autorite-concurrence.md).
+
+- `id_decision` n'est pas unique (5 doublons) : l'identifiant retenu est l'URL de la décision. Vérifié en base : 6683 documents pour 6678 `id_decision` distincts.
+- `type_decision` mélange libellés, codes et listes (type principal + sous-type), et les listes apparaissent sous deux formats différents (style Python et style JSON).
+- Deux familles de schémas (décisions/avis et concentrations), plus un cas limite à 20 champs : il faudra un tronc commun et des attributs propres en Silver.
+- Le `robots.txt` du site interdit toutes les URL avec paramètres, dont la pagination de la liste : l'historique vient donc de l'open data, et le scraper se limite à la première page et aux pages de détail.
