@@ -18,7 +18,7 @@ Mini-pipeline de données juridiques : collecte multi-sources (API, open data, s
 - [x] Industrialisation : CI GitHub Actions (ruff + pytest), pre-commit, Dependabot, branche `main` protégée
 - [x] Migration de `/export` (déprécié) vers `/scan`, avec `date_type` explicite
 - [x] Étape 1b : ingestion du jeu de données open data de l'Autorité de la concurrence (6683 décisions, lecture en flux d'un JSON de 210 Mo, idempotence vérifiée)
-- [ ] Étape 1c : scraper de fraîcheur du site de l'Autorité de la concurrence
+- [x] Étape 1c : scraper de fraîcheur du site de l'Autorité de la concurrence (première page de la liste, contrôle des écarts avec l'open data), réalisé par délégation à un agent
 - [ ] Étape 1d : planification des collecteurs avec Celery et Redis (Celery Beat)
 - [ ] Étape 2 : couche Silver
 - [ ] Étape 3 : contrôles qualité
@@ -31,9 +31,10 @@ docker compose up -d            # ou : podman compose up -d
 pip install -r requirements-dev.txt
 pre-commit install
 pytest
-python -m src.collector.run --start 2026-09-01 --end 2026-09-07
-python -m src.collector.run_adlc                 # fichier local : data/raw/adlc-texte-complet-publications.json
-python -m src.collector.run_adlc --url <URL>     # ou téléchargement préalable depuis data.gouv.fr
+python -m src.collector.judilibre.run --start 2026-09-01 --end 2026-09-07
+python -m src.collector.adlc_opendata.run                 # fichier local : data/raw/adlc-texte-complet-publications.json
+python -m src.collector.adlc_opendata.run --url <URL>     # ou téléchargement préalable depuis data.gouv.fr
+python -m src.collector.adlc_scraper.run                  # contrôle de fraîcheur : décisions du site absentes de l'open data
 ```
 Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargés, jamais versionnés.
 
@@ -43,7 +44,7 @@ Options du collecteur : `--date-type update|creation` (défaut : `update`), `--b
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 
 - **Assistance conversationnelle (Claude)** : explications, discussions de conception, premières versions de code que je relis, adapte et teste.
-- **Délégation à un agent (Claude Code)**, à partir du scraper de fraîcheur : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
+- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
 
 **Ce qui reste de mon ressort :**
 - l'analyse de chaque source (documentation, `robots.txt`, structure des données) et les choix de conception qui en découlent ;
@@ -96,4 +97,5 @@ Documentation détaillée : [`docs/sources/autorite-concurrence.md`](docs/source
 - `id_decision` n'est pas unique (5 doublons) : l'identifiant retenu est l'URL de la décision. Vérifié en base : 6683 documents pour 6678 `id_decision` distincts.
 - `type_decision` mélange libellés, codes et listes (type principal + sous-type), et les listes apparaissent sous deux formats différents (style Python et style JSON).
 - Deux familles de schémas (décisions/avis et concentrations), plus un cas limite à 20 champs : il faudra un tronc commun et des attributs propres en Silver.
-- Le `robots.txt` du site interdit toutes les URL avec paramètres, dont la pagination de la liste : l'historique vient donc de l'open data, et le scraper se limite à la première page et aux pages de détail.
+- Le `robots.txt` du site interdit toutes les URL avec paramètres, dont la pagination de la liste : l'historique vient donc de l'open data, et le scraper de fraîcheur ne visite que la première page de la liste (une seule requête par run).
+- Les URL de la liste correspondent exactement au champ `url_site` de l'open data : elles servent de clé de comparaison entre le site et le jeu de données (vérifié sur les 20 décisions de la première page, toutes présentes dans l'open data le 25/09/2026).
