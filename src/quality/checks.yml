@@ -151,7 +151,8 @@
     WHERE s.source = 'adlc-scraper'
       AND NOT EXISTS (
         SELECT 1 FROM bronze.raw_documents o
-        WHERE o.source = 'adlc-opendata' AND o.external_id = s.external_id
+          WHERE o.source = 'adlc-opendata'
+            AND rtrim(btrim(o.external_id), '/') = rtrim(btrim(s.external_id), '/')
       );
   expect:
     adlc-scraper: {op: "==", value: 0}
