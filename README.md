@@ -35,7 +35,15 @@ python -m src.collector.judilibre.run --start 2026-09-01 --end 2026-09-07
 python -m src.collector.adlc_opendata.run                 # fichier local : data/raw/adlc-texte-complet-publications.json
 python -m src.collector.adlc_opendata.run --url <URL>     # ou téléchargement préalable depuis data.gouv.fr
 python -m src.collector.adlc_scraper.run                  # contrôle de fraîcheur : décisions du site absentes de l'open data
+python -m src.silver.run                                  # reconstruction complète de silver.decisions depuis Bronze
 ```
+
+Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer la migration Silver à la main (PowerShell) :
+```powershell
+Get-Content sql\003_silver.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
+```
+
+La couche Silver est reconstruite entièrement à chaque run, dans une seule transaction : en cas d'échec, l'ancien contenu reste intact. Le run est journalisé dans `bronze.collection_runs` (source `silver`) et affiche, par source, le nombre de lignes écrites et d'anomalies par type (valeur non convertible mise à `NULL`).
 Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargés, jamais versionnés.
 
 Options du collecteur : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100). Sans `--start`, la collecte reprend après le dernier run réussi du même type de date.
