@@ -56,6 +56,35 @@
     default: {op: "==", value: 0}
     adlc-opendata: {op: "<=", value: 30}
 
+- name: silver_rows_missing_from_index
+  dimension: completeness
+  severity: error
+  description: >-
+    Silver decisions missing from the index currently behind the alias (last run
+    with alias_switched). Also detects a stale index after a Silver rebuild.
+  sql: |
+    WITH last_switch AS (
+      SELECT max(run_id) AS run_id
+      FROM search.index_stats
+      WHERE alias_switched
+    ),
+    indexed AS (
+      SELECT source, indexed_count
+      FROM search.index_stats
+      WHERE run_id = (SELECT run_id FROM last_switch)
+    ),
+    silver AS (
+      SELECT source, count(*) AS n
+      FROM silver.decisions
+      GROUP BY source
+    )
+    SELECT s.source, s.n - coalesce(i.indexed_count, 0) AS value
+    FROM silver s
+    LEFT JOIN indexed i USING (source);
+  expect:
+    judilibre: {op: "==", value: 0}
+    adlc-opendata: {op: "==", value: 0}
+
 # Validity -------------------------------------------------------------------
 
 - name: impossible_decision_date
