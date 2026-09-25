@@ -36,7 +36,7 @@ Add migration `sql/003_silver.sql` (schema `silver`, table `decisions`):
 - `title`: `NULL` (no title in the source; `summary` is often empty).
 - `text`: `text`.
 - `sectors`: empty array.
-- `url`: `https://www.courdecassation.fr/decision/{id}` (format verified on the Cour de cassation website).
+- `url`: `https://www.courdecassation.fr/decision/{id}` (format verified on 25/09/2026 with decision 19-24.008).
 - `attributes`: `ecli`, `numbers` (deduplicated, order preserved), `chamber`, `formation`, `solution`, `publication`, `themes`, `summary` (only if not empty), `update_date`, `judilibre_type`.
 
 ## Mapping: `adlc-opendata`
