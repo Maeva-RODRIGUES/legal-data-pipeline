@@ -1,0 +1,158 @@
+# Completeness ---------------------------------------------------------------
+
+- name: bronze_rows_missing_from_silver
+  dimension: completeness
+  severity: error
+  description: Bronze decisions absent from Silver, per source.
+  sql: |
+    SELECT b.source, count(*) FILTER (WHERE s.external_id IS NULL) AS value
+    FROM bronze.raw_documents b
+    LEFT JOIN silver.decisions s
+      ON s.source = b.source AND s.external_id = b.external_id
+    WHERE b.source IN ('judilibre', 'adlc-opendata')
+    GROUP BY b.source;
+  expect:
+    judilibre: {op: "==", value: 0}
+    adlc-opendata: {op: "==", value: 0}
+
+- name: missing_decision_date
+  dimension: completeness
+  severity: error
+  description: Silver decisions without a decision date, per source.
+  sql: |
+    SELECT source, count(*) FILTER (WHERE decision_date IS NULL) AS value
+    FROM silver.decisions
+    GROUP BY source;
+  expect:
+    default: {op: "==", value: 0}
+
+- name: missing_decision_type_pct
+  dimension: completeness
+  severity: warning
+  description: >-
+    Percentage of Silver decisions without a decision type.
+    Judilibre is known to be 100% (source type is always "other").
+  sql: |
+    SELECT source,
+           round(100.0 * count(*) FILTER (WHERE decision_type IS NULL) / count(*), 2) AS value
+    FROM silver.decisions
+    GROUP BY source;
+  expect:
+    default: {op: "==", value: 0}
+    judilibre: {op: "==", value: 100}
+
+- name: empty_text
+  dimension: completeness
+  severity: warning
+  description: >-
+    Decisions without full text (empty or NULL), hence not searchable by content.
+    30 known for the Autorité as of 25/09/2026, mostly recent merger decisions
+    and 1990s documents.
+  sql: |
+    SELECT source, count(*) FILTER (WHERE text IS NULL OR btrim(text) = '') AS value
+    FROM silver.decisions
+    GROUP BY source;
+  expect:
+    default: {op: "==", value: 0}
+    adlc-opendata: {op: "<=", value: 30}
+
+# Validity -------------------------------------------------------------------
+
+- name: impossible_decision_date
+  dimension: validity
+  severity: error
+  description: Decision dates in the future, or before 1988 for the Autorité de la concurrence.
+  sql: |
+    SELECT source,
+           count(*) FILTER (
+             WHERE decision_date > current_date
+                OR (source = 'adlc-opendata' AND decision_date < DATE '1988-01-01')
+           ) AS value
+    FROM silver.decisions
+    GROUP BY source;
+  expect:
+    default: {op: "==", value: 0}
+
+# Uniqueness -----------------------------------------------------------------
+
+- name: duplicate_decision_number
+  dimension: uniqueness
+  severity: warning
+  description: >-
+    Decision numbers used by more than one Silver row, per source.
+    5 known for the Autorité (e.g. 17-A-05).
+  sql: |
+    SELECT s.source, count(d.decision_number) AS value
+    FROM (SELECT DISTINCT source FROM silver.decisions) s
+    LEFT JOIN (
+      SELECT source, decision_number
+      FROM silver.decisions
+      WHERE decision_number IS NOT NULL
+      GROUP BY source, decision_number
+      HAVING count(*) > 1
+    ) d ON d.source = s.source
+    GROUP BY s.source;
+  expect:
+    default: {op: "==", value: 0}
+    adlc-opendata: {op: "<=", value: 5}
+
+# Consistency ----------------------------------------------------------------
+
+- name: number_year_mismatch
+  dimension: consistency
+  severity: warning
+  description: >-
+    Autorité decisions whose date is impossible given their number: earlier than
+    the number year, or more than one year later. A one-year gap is normal
+    (a year's numbering runs into the first months of the next year).
+    3 known as of 25/09/2026 (95-MC-06, 95-D-26, 96-D-03).
+  sql: |
+    WITH n AS (
+      SELECT decision_date,
+             left(decision_number, 2)::int
+               + CASE WHEN left(decision_number, 2)::int >= 87 THEN 1900 ELSE 2000 END AS number_year
+      FROM silver.decisions
+      WHERE source = 'adlc-opendata'
+        AND decision_number ~ '^\d{2}-'
+    )
+    SELECT 'adlc-opendata' AS source,
+           count(*) FILTER (
+             WHERE extract(year FROM decision_date)::int - number_year NOT IN (0, 1)
+           ) AS value
+    FROM n;
+  expect:
+    adlc-opendata: {op: "<=", value: 3}
+
+# Freshness ------------------------------------------------------------------
+
+- name: hours_since_last_success
+  dimension: freshness
+  severity: warning
+  description: Hours since the last successful run of each pipeline step.
+  sql: |
+    SELECT source, round(extract(epoch FROM now() - max(finished_at)) / 3600) AS value
+    FROM bronze.collection_runs
+    WHERE status = 'success'
+      AND source IN ('judilibre', 'adlc-opendata', 'adlc-scraper', 'silver')
+    GROUP BY source;
+  expect:
+    judilibre: {op: "<=", value: 168}
+    adlc-opendata: {op: "<=", value: 168}
+    adlc-scraper: {op: "<=", value: 168}
+    silver: {op: "<=", value: 168}
+
+- name: site_decisions_missing_from_opendata
+  dimension: freshness
+  severity: warning
+  description: Decisions seen on the Autorité website by the scraper but absent from the open data dataset.
+  sql: |
+    SELECT 'adlc-scraper' AS source, count(*) AS value
+    FROM bronze.raw_documents s
+    WHERE s.source = 'adlc-scraper'
+      AND NOT EXISTS (
+        SELECT 1 FROM bronze.raw_documents o
+          WHERE o.source = 'adlc-opendata'
+            AND rtrim(btrim(o.external_id), '/') = rtrim(btrim(s.external_id), '/')
+      );
+  expect:
+    adlc-scraper: {op: "==", value: 0}
