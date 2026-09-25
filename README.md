@@ -36,11 +36,13 @@ python -m src.collector.adlc_opendata.run                 # fichier local : data
 python -m src.collector.adlc_opendata.run --url <URL>     # ou téléchargement préalable depuis data.gouv.fr
 python -m src.collector.adlc_scraper.run                  # contrôle de fraîcheur : décisions du site absentes de l'open data
 python -m src.silver.run                                  # reconstruction complète de silver.decisions depuis Bronze
+python -m src.quality.run                                 # contrôles qualité ; code de sortie 1 si un contrôle bloquant échoue
 ```
 
-Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer la migration Silver à la main (PowerShell) :
+Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer à la main les migrations Silver et qualité (PowerShell) :
 ```powershell
 Get-Content sql\003_silver.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
+Get-Content sql\004_quality.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 ```
 
 Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargés, jamais versionnés.
@@ -59,6 +61,22 @@ Règles de transformation :
 - **pas de dédoublonnage** en Silver : les doublons restent visibles pour l'étape des contrôles qualité.
 
 Le run est journalisé dans `bronze.collection_runs` (source `silver`). Spécification et plan : [`docs/tasks/`](docs/tasks/).
+
+## Contrôles qualité
+Chaque contrôle est une requête SQL associée à une attente, déclarée dans [`src/quality/checks.yml`](src/quality/checks.yml). Je tiens ce catalogue moi-même (requêtes et seuils) ; le moteur (`src/quality/`) se contente de les exécuter.
+
+- Chaque requête renvoie une ligne par source, avec deux colonnes : `source` et `value`.
+- Les attentes (`==`, `<=`, `>=`, `<`, `>`) sont données par source, avec une entrée `default` facultative. Un **écart connu et documenté** a sa propre attente (par exemple 30 textes vides pour l'Autorité) : il ne déclenche pas d'alerte, alors qu'un nouvel écart ressort.
+- Statuts d'un résultat :
+  - `pass` / `fail` : la valeur respecte ou non l'attente ;
+  - `no_data` : une source déclarée dans l'attente est absente du résultat ;
+  - `unchecked` : aucune attente ne s'applique à la source (signalé, jamais bloquant) ;
+  - `query_error` : la requête a échoué ou son résultat est mal formé ; les autres contrôles s'exécutent quand même.
+- **Verdict** : le run échoue si un contrôle de sévérité `error` est en `fail`, `no_data` ou `query_error`. Le script sort alors avec le code 1 (0 sinon), pour que Celery ou la CI puissent arrêter le pipeline. Un contrôle `warning` n'est jamais bloquant.
+
+Les requêtes s'exécutent dans une transaction en lecture seule, avec un savepoint par contrôle. Les résultats sont ensuite stockés dans `quality.check_results` (une ligne par contrôle et par source, avec le message d'erreur d'un `query_error`), pour suivre la qualité dans le temps. Le run est journalisé dans `bronze.collection_runs` (source `quality`) : son statut est `success` dès que le moteur a tout exécuté, quel que soit le verdict.
+
+L'option `--checks <chemin>` permet de lancer un autre catalogue, par exemple un catalogue de test avec une requête volontairement cassée.
 
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
