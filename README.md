@@ -19,6 +19,7 @@ Mini-pipeline de données juridiques : collecte multi-sources (API, open data, s
 - [x] Migration de `/export` (déprécié) vers `/scan`, avec `date_type` explicite
 - [x] Étape 1b : ingestion du jeu de données open data de l'Autorité de la concurrence (6683 décisions, lecture en flux d'un JSON de 210 Mo, idempotence vérifiée)
 - [ ] Étape 1c : scraper de fraîcheur du site de l'Autorité de la concurrence
+- [ ] Étape 1d : planification des collecteurs avec Celery et Redis (Celery Beat)
 - [ ] Étape 2 : couche Silver
 - [ ] Étape 3 : contrôles qualité
 - [ ] Étapes 4-5 : Elasticsearch, FastAPI
@@ -39,7 +40,26 @@ Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargé
 Options du collecteur : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100). Sans `--start`, la collecte reprend après le dernier run réussi du même type de date.
 
 ## Méthode de travail
-Développé avec l'aide de Claude (IA générative). Les choix de structure, les tests et la vérification des résultats sont faits à la main ; les pièges rencontrés sur chaque source sont notés ci-dessous.
+Le projet est développé avec l'aide de l'IA générative, selon deux modes :
+
+- **Assistance conversationnelle (Claude)** : explications, discussions de conception, premières versions de code que je relis, adapte et teste.
+- **Délégation à un agent (Claude Code)**, à partir du scraper de fraîcheur : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
+
+**Ce qui reste de mon ressort :**
+- l'analyse de chaque source (documentation, `robots.txt`, structure des données) et les choix de conception qui en découlent ;
+- la relecture du code, les runs sur données réelles et la vérification des résultats ;
+- la documentation des pièges rencontrés, notés ci-dessous.
+
+Chaque pull request précise ce qui a été délégué et ce que j'ai fait ou corrigé moi-même.
+
+> [!IMPORTANT]
+> **Pourquoi ne pas tout automatiser ?**
+> J'aurais pu confier l'ensemble du projet à Claude Code, en lui faisant rédiger un plan d'implémentation (par exemple avec les skills Superpowers) puis l'exécuter de bout en bout. J'ai fait le choix inverse : **garder la main sur chaque étape**, pour comprendre ce qui est construit, prendre moi-même les décisions liées aux sources et pouvoir expliquer chaque ligne de code. La délégation à un agent vient ensuite, progressivement, sur des tâches dont je maîtrise le contexte et que je sais vérifier.
+>
+> **Ce que cette approche a permis de trouver :**
+> - la route `/export` de l'API Judilibre était **dépréciée**, alors que rien ne le signalait à l'exécution ;
+> - la valeur par défaut de `date_type` **changeait silencieusement** entre `/export` et `/scan` : sur une même période, seules 6 décisions étaient communes aux deux routes ;
+> - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté.
 
 ## Pièges des sources
 
