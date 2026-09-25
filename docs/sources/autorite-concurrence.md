@@ -14,6 +14,7 @@
 - Listes vides (`[]`) plutôt que valeurs manquantes : 919 décisions sans secteur, 1394 sans entreprise.
 - Encodage : fichier en UTF-8, mais `Get-Content` (PowerShell) et `open()` (Python sous Windows) lisent par défaut en cp1252. Toujours préciser l'encodage, ou lire en binaire.
 - `decision_simplifiee` vaut `null` pour 28 décisions : 27 des 28 décisions `DEX` et la lettre du ministre. Une seule décision `DEX` a une valeur. Ce n'est donc pas une règle stricte : le Silver garde `null` dans `attributes`, sans anomalie.
+- **Deux apostrophes coexistent dans les titres** : typographique (`l’électricité`, par exemple `12-A-19`) et droite (`l'électricité`, par exemple `13-A-25`). Vérifié avec `_analyze` : l'analyseur `french_folded` de l'index les traite de la même façon (les deux donnent le terme `electricit`), la recherche n'est donc pas affectée. À garder en tête pour toute comparaison de titres hors de l'index (en SQL, par exemple).
 
 ### Observé lors des contrôles qualité (25/09/2026)
 - **30 décisions sans texte intégral** (chaîne vide, pas `NULL`), donc impossibles à retrouver par une recherche dans le contenu : 21 décisions de concentration, dont 8 datées de 2026, et 9 avis et décisions des années 1990 et 2000, plus la lettre du ministre. Hypothèses à vérifier sur le site : une version publique pas encore publiée pour les concentrations récentes, des PDF numérisés sans texte extrait pour les documents anciens.
