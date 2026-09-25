@@ -1,0 +1,45 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "french_folded": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["french_elision", "lowercase", "french_stop", "asciifolding", "french_stemmer"]
+        }
+      },
+      "filter": {
+        "french_elision": {
+          "type": "elision",
+          "articles_case": true,
+          "articles": ["l", "m", "t", "qu", "n", "s", "j", "d", "c", "jusqu", "quoiqu", "lorsqu", "puisqu"]
+        },
+        "french_stop": { "type": "stop", "stopwords": "_french_" },
+        "french_stemmer": { "type": "stemmer", "language": "light_french" }
+      },
+      "normalizer": {
+        "folded": { "type": "custom", "filter": ["lowercase", "asciifolding"] }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "source":          { "type": "keyword" },
+      "external_id":     { "type": "keyword" },
+      "decision_number": { "type": "keyword", "normalizer": "folded" },
+      "issuer":          { "type": "keyword" },
+      "decision_type":   { "type": "keyword" },
+      "decision_date":   { "type": "date" },
+      "title":           { "type": "text", "analyzer": "french_folded" },
+      "text":            { "type": "text", "analyzer": "french_folded", "index_options": "offsets" },
+      "has_text":        { "type": "boolean" },
+      "sectors":         { "type": "keyword" },
+      "url":             { "type": "keyword", "index": false },
+      "attributes":      { "type": "object", "enabled": false },
+      "indexed_at":      { "type": "date" }
+    }
+  }
+}

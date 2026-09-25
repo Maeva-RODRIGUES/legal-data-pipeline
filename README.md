@@ -65,15 +65,17 @@ python -m src.collector.adlc_opendata.run --url <URL>     # ou téléchargement 
 python -m src.collector.adlc_scraper.run                  # contrôle de fraîcheur : décisions du site absentes de l'open data
 python -m src.silver.run                                  # reconstruction complète de silver.decisions depuis Bronze
 python -m src.quality.run                                 # contrôles qualité ; code de sortie 1 si un contrôle bloquant échoue
+python -m src.search.run                                  # reconstruction de l'index decisions ; code de sortie 1 si l'alias n'est pas basculé
 ```
 
-Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer à la main les migrations Silver et qualité (PowerShell) :
+Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer à la main les migrations Silver, qualité et recherche (PowerShell) :
 ```powershell
 Get-Content sql\003_silver.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 Get-Content sql\004_quality.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
+Get-Content sql\005_search.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 ```
 
-Sous Windows, utiliser `127.0.0.1` plutôt que `localhost` dans `DATABASE_URL` : `localhost` est d'abord résolu en IPv6 (`::1`), et la connexion au conteneur peut alors prendre plus de deux minutes avant de se rabattre sur l'IPv4.
+Sous Windows, utiliser `127.0.0.1` plutôt que `localhost` dans `DATABASE_URL` et `ELASTICSEARCH_URL` : `localhost` est d'abord résolu en IPv6 (`::1`), et la connexion au conteneur peut alors prendre plus de deux minutes avant de se rabattre sur l'IPv4.
 
 Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargés, jamais versionnés.
 
@@ -93,19 +95,26 @@ src/
 │   ├── judilibre.py          # transformation d'une décision Judilibre
 │   ├── adlc_opendata.py      # transformation d'une décision de l'open data de l'Autorité
 │   └── run.py                # reconstruction complète de silver.decisions et comptage des anomalies
-└── quality/
-    ├── checks.yml            # catalogue des contrôles : requêtes SQL, attentes par source, sévérité
-    ├── checks.py             # chargement et validation du catalogue
-    ├── evaluate.py           # comparaison des résultats aux attentes, statuts et verdict
-    └── run.py                # exécution en lecture seule, historisation dans quality.check_results
+├── quality/
+│   ├── checks.yml            # catalogue des contrôles : requêtes SQL, attentes par source, sévérité
+│   ├── checks.py             # chargement et validation du catalogue
+│   ├── evaluate.py           # comparaison des résultats aux attentes, statuts et verdict
+│   └── run.py                # exécution en lecture seule, historisation dans quality.check_results
+└── search/
+    ├── mapping.json          # mapping de l'index : champs, analyseur français, normaliseur des numéros
+    ├── document.py           # construction d'un document à partir d'une ligne Silver
+    ├── index.py              # accès à Elasticsearch (création, envoi en masse, comptes, alias)
+    ├── rebuild.py            # reconstruction d'un index et bascule de l'alias si les comptes concordent
+    └── run.py                # lecture de Silver, statistiques dans search.index_stats, rapport
 sql/
 ├── 001_bronze.sql            # schéma bronze : documents bruts et journal des runs
 ├── 002_add_date_type.sql     # type de date filtré (update | creation) dans le journal des runs
 ├── 003_silver.sql            # schéma silver : table decisions
-└── 004_quality.sql           # schéma quality : table check_results
+├── 004_quality.sql           # schéma quality : table check_results
+└── 005_search.sql            # schéma search : table index_stats
 tests/
 ├── fixtures/                 # page HTML et extrait JSON, pour tester sans appel réseau
-└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité)
+└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche)
 docs/
 ├── api/                      # copie de référence de la spécification OpenAPI de Judilibre
 ├── sources/                  # analyse des sources (structure des données, écarts constatés)
@@ -142,6 +151,16 @@ Les requêtes s'exécutent dans une transaction en lecture seule, avec un savepo
 L'option `--checks <chemin>` permet de lancer un autre catalogue, par exemple un catalogue de test avec une requête volontairement cassée.
 
 **Premier run (25/09/2026)** : 9 contrôles, 18 résultats, tous `pass`. Écarts connus, acceptés à leur niveau actuel : 30 décisions de l'Autorité sans texte intégral, 5 numéros en double, 3 dates impossibles au regard du numéro, et le type de décision vide pour toutes les décisions de Judilibre.
+
+## Recherche
+Les décisions de Silver sont indexées dans Elasticsearch (service `elasticsearch` du `docker-compose.yml`, un seul nœud, sécurité désactivée : usage local uniquement). Le mapping, dans [`src/search/mapping.json`](src/search/mapping.json), est strict : un champ non déclaré fait rejeter le document.
+
+- **Reconstruction complète** à chaque run, dans un nouvel index `decisions_<AAAAMMJJ_HHMMSS>` (heure UTC). Un document par ligne Silver, d'identifiant `source|external_id` ; une valeur `NULL` reste `null`, et `has_text` indique si le texte intégral est présent.
+- **Bascule atomique** : l'alias `decisions`, seul nom interrogé, passe au nouvel index en une seule opération, **uniquement si** les comptes par source sont identiques à ceux de Silver et qu'aucun document n'a été rejeté. Silver est compté et lu sur un même instantané, en lecture seule.
+- **En cas d'écart ou d'erreur**, le nouvel index est supprimé et l'alias reste sur l'ancien : la recherche ne voit jamais un index incomplet.
+- **Retour arrière** : après la bascule, l'index précédent est conservé et les plus anciens sont supprimés. Un échec de ce nettoyage est signalé par un avertissement, sans changer le code de sortie.
+
+Chaque run écrit dans `search.index_stats` une ligne par source (compte Silver, compte indexé, rejets, bascule ou non), même quand l'alias n'est pas basculé. Il est journalisé dans `bronze.collection_runs` (source `search`) : statut `failed`, avec la raison dans `error`, si l'alias n'est pas basculé. Le script sort alors avec le code 1 (0 sinon).
 
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
