@@ -12,3 +12,4 @@
 - Dates en toutes lettres en français (`04 août 2026`) dans le JSON, au format ISO dans le CSV ; types différents entre fichiers (`date_decision_year` texte ou nombre).
 - Listes vides (`[]`) plutôt que valeurs manquantes : 919 décisions sans secteur, 1394 sans entreprise.
 - Encodage : fichier en UTF-8, mais `Get-Content` (PowerShell) et `open()` (Python sous Windows) lisent par défaut en cp1252. Toujours préciser l'encodage, ou lire en binaire.
+- `decision_simplifiee` vaut `null` pour 28 décisions : 27 des 28 décisions `DEX` et la lettre du ministre. Une seule décision `DEX` a une valeur. Ce n'est donc pas une règle stricte : le Silver garde `null` dans `attributes`, sans anomalie.

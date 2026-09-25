@@ -9,9 +9,9 @@ Mini-pipeline de données juridiques : collecte multi-sources (API, open data, s
   - API Judilibre (Cour de cassation) ;
   - jeu de données open data de l'Autorité de la concurrence (data.gouv.fr) ;
   - scraper du site de l'Autorité de la concurrence, pour détecter les décisions pas encore publiées en open data.
-- **Silver** : les ramener à un schéma commun (dédoublonnage, champs manquants, formats hétérogènes).
+- **Silver** : ramener les décisions de Judilibre et de l'open data à un schéma commun.
 - **Qualité** : mesurer l'écart entre ce qui est collecté et ce qui est exploitable.
-- **Bonus** : indexation Elasticsearch, API de recherche FastAPI.
+- **Bonus** : planification avec Celery, indexation Elasticsearch, API de recherche FastAPI.
 
 ## Avancement
 - [x] Étape 1a : collecteur Judilibre (pagination, reprises sur erreur, collecte incrémentale, journal des runs), testé sur données réelles ; idempotence vérifiée (relance d'un run : 0 nouveau, 14 inchangés)
@@ -19,10 +19,10 @@ Mini-pipeline de données juridiques : collecte multi-sources (API, open data, s
 - [x] Migration de `/export` (déprécié) vers `/scan`, avec `date_type` explicite
 - [x] Étape 1b : ingestion du jeu de données open data de l'Autorité de la concurrence (6683 décisions, lecture en flux d'un JSON de 210 Mo, idempotence vérifiée)
 - [x] Étape 1c : scraper de fraîcheur du site de l'Autorité de la concurrence (première page de la liste, contrôle des écarts avec l'open data), réalisé par délégation à un agent
-- [ ] Étape 1d : planification des collecteurs avec Celery et Redis (Celery Beat)
-- [ ] Étape 2 : couche Silver
-- [ ] Étape 3 : contrôles qualité
-- [ ] Étapes 4-5 : Elasticsearch, FastAPI
+- [x] Étape 2 : couche Silver (schéma commun Judilibre et Autorité de la concurrence, reconstruction complète à chaque run, 6707 décisions, aucune anomalie), réalisée par délégation à un agent
+- [ ] Étape 3 : contrôles qualité (écarts entre Bronze et Silver, champs manquants, doublons)
+- [ ] Étape 4 : planification du pipeline avec Celery et Redis (Celery Beat)
+- [ ] Étape 5 : Elasticsearch et API de recherche FastAPI
 
 ## Lancer le projet
 ```bash
@@ -35,20 +35,40 @@ python -m src.collector.judilibre.run --start 2026-09-01 --end 2026-09-07
 python -m src.collector.adlc_opendata.run                 # fichier local : data/raw/adlc-texte-complet-publications.json
 python -m src.collector.adlc_opendata.run --url <URL>     # ou téléchargement préalable depuis data.gouv.fr
 python -m src.collector.adlc_scraper.run                  # contrôle de fraîcheur : décisions du site absentes de l'open data
+python -m src.silver.run                                  # reconstruction complète de silver.decisions depuis Bronze
 ```
+
+Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer la migration Silver à la main (PowerShell) :
+```powershell
+Get-Content sql\003_silver.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
+```
+
 Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargés, jamais versionnés.
 
-Options du collecteur : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100). Sans `--start`, la collecte reprend après le dernier run réussi du même type de date.
+Options du collecteur Judilibre : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100). Sans `--start`, la collecte reprend après le dernier run réussi du même type de date.
+
+## Couche Silver
+Une seule table, `silver.decisions`, alimentée par Judilibre et l'open data de l'Autorité de la concurrence (le scraper reste un outil de contrôle, hors Silver) :
+- un **tronc commun** : numéro, émetteur, type, date, titre, texte intégral, secteurs, URL ;
+- une colonne **`attributes`** (JSON) pour les champs propres à chaque source.
+
+Règles de transformation :
+- **reconstruction complète** à chaque run, dans une seule transaction : en cas d'échec, l'ancien contenu reste intact ;
+- **ne jamais deviner** : une valeur non convertible devient `NULL` et est comptée comme anomalie, par type ; une valeur inconnue n'est jamais rattachée à un type connu ;
+- **un champ absent n'est pas une anomalie** : les deux familles de décisions de l'Autorité n'ont pas les mêmes champs ;
+- **pas de dédoublonnage** en Silver : les doublons restent visibles pour l'étape des contrôles qualité.
+
+Le run est journalisé dans `bronze.collection_runs` (source `silver`). Spécification et plan : [`docs/tasks/`](docs/tasks/).
 
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 
 - **Assistance conversationnelle (Claude)** : explications, discussions de conception, premières versions de code que je relis, adapte et teste.
-- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
+- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)) et la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
 
 **Ce qui reste de mon ressort :**
 - l'analyse de chaque source (documentation, `robots.txt`, structure des données) et les choix de conception qui en découlent ;
-- la relecture du code, les runs sur données réelles et la vérification des résultats ;
+- la relecture des plans et du code, les runs sur données réelles et la vérification des résultats ;
 - la documentation des pièges rencontrés, notés ci-dessous.
 
 Chaque pull request précise ce qui a été délégué et ce que j'ai fait ou corrigé moi-même.
@@ -60,7 +80,8 @@ Chaque pull request précise ce qui a été délégué et ce que j'ai fait ou co
 > **Ce que cette approche a permis de trouver :**
 > - la route `/export` de l'API Judilibre était **dépréciée**, alors que rien ne le signalait à l'exécution ;
 > - la valeur par défaut de `date_type` **changeait silencieusement** entre `/export` et `/scan` : sur une même période, seules 6 décisions étaient communes aux deux routes ;
-> - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté.
+> - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté ;
+> - pour la couche Silver, **96 tests passaient, mais le premier run réel a révélé 6683 anomalies** : la spécification décrivait comme du texte des champs qui sont de vraies listes JSON. Vérifié avec `jsonb_typeof`, corrigé, et testé depuis sur de vraies décisions du Bronze.
 
 ## Pièges des sources
 
@@ -69,8 +90,7 @@ Spécification de référence : [`docs/api/`](docs/api/).
 
 **Observé lors du premier run** (15-16 septembre 2026 : 14 décisions collectées) :
 - La décision est renvoyée complète (31 champs), texte intégral compris (`text`) et découpage du texte en parties (`zones`) : pas besoin d'un appel supplémentaire par décision.
-- `number` et `numbers` coexistent : une décision peut porter sur plusieurs pourvois. Choix à faire en Silver (numéro principal ou liste).
-- Chaque date existe en deux versions (`decision_date` / `decision_datetime`, `update_date` / `update_datetime`) : leur cohérence sera à contrôler en Silver.
+- Chaque date existe en deux versions (`decision_date` / `decision_datetime`, `update_date` / `update_datetime`) : leur cohérence sera à contrôler.
 
 **D'après la spécification Swagger :**
 - `GET /export` est marqué comme déprécié. Son remplaçant, `GET /scan`, accepte les mêmes filtres mais pagine avec un curseur au lieu d'un numéro de lot, ce qui convient mieux aux gros volumes.
@@ -86,6 +106,12 @@ Spécification de référence : [`docs/api/`](docs/api/).
   - seules 6 décisions sont communes aux deux ensembles.
 - Conséquence : migrer sans `date_type` explicite change silencieusement le périmètre de la collecte. Le collecteur envoie désormais toujours `date_type` (`update` par défaut, pour ne pas manquer les décisions publiées tardivement, dont une rendue en 2021 et mise à jour le 16/09/2026), et le journal des runs l'enregistre.
 
+**Observé lors de la conception de la couche Silver :**
+- **`number` est corrompu** : il concatène le premier numéro de pourvoi et tous les autres, sans séparateur ni ponctuation (par exemple `26-83.1462280984` pour `26-83.146` et `22-80.984`). Le numéro fiable est le premier élément de `numbers`, qui contient lui-même des doublons (jusqu'à 15 entrées pour 5 numéros distincts).
+- `type` vaut `other` pour toutes les décisions collectées : le type de décision reste vide en Silver plutôt que d'être deviné.
+- `summary` est souvent vide : il ne peut pas servir de titre.
+- L'URL publique d'une décision est `https://www.courdecassation.fr/decision/{id}` (vérifié le 25/09/2026).
+
 **Questions ouvertes :**
 - Certaines décisions ont un contenu différent selon qu'elles sont obtenues par `/export` ou par `/scan`, ou ont été mises à jour entre deux runs. La couche Bronze écrasant l'ancienne version, la différence ne peut pas être analysée : piste pour une Bronze en append-only (historique des versions).
 - Le contenu d'une décision peut changer **sans que sa date de mise à jour change** : observé le 24/09/2026 sur une décision datée du 15/09, dont le contenu renvoyé par `/scan` avait été modifié. Seule la comparaison des empreintes (hash du contenu complet) l'a détecté ; une détection fondée sur `update_date` l'aurait manqué.
@@ -95,7 +121,8 @@ Spécification de référence : [`docs/api/`](docs/api/).
 Documentation détaillée : [`docs/sources/autorite-concurrence.md`](docs/sources/autorite-concurrence.md).
 
 - `id_decision` n'est pas unique (5 doublons) : l'identifiant retenu est l'URL de la décision. Vérifié en base : 6683 documents pour 6678 `id_decision` distincts.
-- `type_decision` mélange libellés, codes et listes (type principal + sous-type), et les listes apparaissent sous deux formats différents (style Python et style JSON).
-- Deux familles de schémas (décisions/avis et concentrations), plus un cas limite à 20 champs : il faudra un tronc commun et des attributs propres en Silver.
+- `type_decision` mélange libellés, codes et listes (type principal + sous-type : `MC`, `DEX`, `SOA`). Les listes sont du texte au format Python dans le CSV, mais de vraies listes JSON dans le JSON : un affichage trompeur a d'abord fait croire le contraire, et seul le premier run réel de la couche Silver l'a révélé.
+- Deux familles de schémas (décisions/avis et concentrations), plus un cas limite à 20 champs (la lettre du ministre de l'économie, dont le libellé contient une faute de frappe) : en Silver, le tronc commun est complété par une colonne `attributes`.
+- `decision_simplifiee` vaut `null` pour 28 décisions : 27 des 28 décisions `DEX` et la lettre du ministre. Une seule décision `DEX` a une valeur : ce n'est donc pas une règle stricte.
 - Le `robots.txt` du site interdit toutes les URL avec paramètres, dont la pagination de la liste : l'historique vient donc de l'open data, et le scraper de fraîcheur ne visite que la première page de la liste (une seule requête par run).
 - Les URL de la liste correspondent exactement au champ `url_site` de l'open data : elles servent de clé de comparaison entre le site et le jeu de données (vérifié sur les 20 décisions de la première page, toutes présentes dans l'open data le 25/09/2026).
