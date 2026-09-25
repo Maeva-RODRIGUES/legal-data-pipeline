@@ -4,6 +4,34 @@
 
 Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration et contrôle qualité.
 
+```mermaid
+flowchart LR
+    J[API Judilibre] --> B[(Bronze<br/>PostgreSQL)]
+    O[Open data ADLC] --> B
+    W[Scraper ADLC<br/>de fraîcheur] --> B
+    B --> S[(Silver<br/>schéma commun)]
+    B -. lecture .-> Q{{Contrôles qualité}}
+    S -. lecture .-> Q
+    Q --> R[(quality.check_results)]
+```
+
+## En bref
+- **3 sources** : l'API Judilibre, l'open data et le site de l'Autorité de la concurrence.
+- **6707 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 24 de Judilibre.
+- **9 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
+- **168 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+
+> [!IMPORTANT]
+> **Pourquoi ne pas tout automatiser ?**
+> J'aurais pu confier l'ensemble du projet à Claude Code, en lui faisant rédiger un plan d'implémentation (par exemple avec les skills Superpowers) puis l'exécuter de bout en bout. J'ai fait le choix inverse : **garder la main sur chaque étape**, pour comprendre ce qui est construit, prendre moi-même les décisions liées aux sources et pouvoir expliquer chaque ligne de code. La délégation à un agent vient ensuite, progressivement, sur des tâches dont je maîtrise le contexte et que je sais vérifier.
+>
+> **Ce que cette approche a permis de trouver :**
+> - la route `/export` de l'API Judilibre était **dépréciée**, alors que rien ne le signalait à l'exécution ;
+> - la valeur par défaut de `date_type` **changeait silencieusement** entre `/export` et `/scan` : sur une même période, seules 6 décisions étaient communes aux deux routes ;
+> - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté ;
+> - pour la couche Silver, **96 tests passaient, mais le premier run réel a révélé 6683 anomalies** : la spécification décrivait comme du texte des champs qui sont de vraies listes JSON. Vérifié avec `jsonb_typeof`, corrigé, et testé depuis sur de vraies décisions du Bronze ;
+> - pour les contrôles qualité, une première version du contrôle de cohérence entre numéro et date levait **42 alertes, dont 39 fausses** : en examinant les décisions une par une, j'ai identifié une règle de la source (la numérotation d'une année se prolonge sur les premiers mois de la suivante) et isolé **les 3 vraies incohérences**.
+
 ## Objectif
 - **Bronze** : collecter des décisions de justice et d'autorités administratives, stockées brutes dans PostgreSQL :
   - API Judilibre (Cour de cassation) ;
@@ -95,17 +123,6 @@ Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 - la documentation des pièges rencontrés, notés ci-dessous.
 
 Chaque pull request précise ce qui a été délégué et ce que j'ai fait ou corrigé moi-même.
-
-> [!IMPORTANT]
-> **Pourquoi ne pas tout automatiser ?**
-> J'aurais pu confier l'ensemble du projet à Claude Code, en lui faisant rédiger un plan d'implémentation (par exemple avec les skills Superpowers) puis l'exécuter de bout en bout. J'ai fait le choix inverse : **garder la main sur chaque étape**, pour comprendre ce qui est construit, prendre moi-même les décisions liées aux sources et pouvoir expliquer chaque ligne de code. La délégation à un agent vient ensuite, progressivement, sur des tâches dont je maîtrise le contexte et que je sais vérifier.
->
-> **Ce que cette approche a permis de trouver :**
-> - la route `/export` de l'API Judilibre était **dépréciée**, alors que rien ne le signalait à l'exécution ;
-> - la valeur par défaut de `date_type` **changeait silencieusement** entre `/export` et `/scan` : sur une même période, seules 6 décisions étaient communes aux deux routes ;
-> - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté ;
-> - pour la couche Silver, **96 tests passaient, mais le premier run réel a révélé 6683 anomalies** : la spécification décrivait comme du texte des champs qui sont de vraies listes JSON. Vérifié avec `jsonb_typeof`, corrigé, et testé depuis sur de vraies décisions du Bronze ;
-> - pour les contrôles qualité, une première version du contrôle de cohérence entre numéro et date levait **42 alertes, dont 39 fausses** : en examinant les décisions une par une, j'ai identifié une règle de la source (la numérotation d'une année se prolonge sur les premiers mois de la suivante) et isolé **les 3 vraies incohérences**.
 
 ## Pièges des sources
 
