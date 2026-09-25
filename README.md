@@ -4,6 +4,34 @@
 
 Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration et contrôle qualité.
 
+```mermaid
+flowchart LR
+    J[API Judilibre] --> B[(Bronze<br/>PostgreSQL)]
+    O[Open data ADLC] --> B
+    W[Scraper ADLC<br/>de fraîcheur] --> B
+    B --> S[(Silver<br/>schéma commun)]
+    B -. lecture .-> Q{{Contrôles qualité}}
+    S -. lecture .-> Q
+    Q --> R[(quality.check_results)]
+```
+
+## En bref
+- **3 sources** : l'API Judilibre, l'open data et le site de l'Autorité de la concurrence.
+- **6707 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 24 de Judilibre.
+- **9 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
+- **168 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+
+> [!IMPORTANT]
+> **Pourquoi ne pas tout automatiser ?**
+> J'aurais pu confier l'ensemble du projet à Claude Code, en lui faisant rédiger un plan d'implémentation (par exemple avec les skills Superpowers) puis l'exécuter de bout en bout. J'ai fait le choix inverse : **garder la main sur chaque étape**, pour comprendre ce qui est construit, prendre moi-même les décisions liées aux sources et pouvoir expliquer chaque ligne de code. La délégation à un agent vient ensuite, progressivement, sur des tâches dont je maîtrise le contexte et que je sais vérifier.
+>
+> **Ce que cette approche a permis de trouver :**
+> - la route `/export` de l'API Judilibre était **dépréciée**, alors que rien ne le signalait à l'exécution ;
+> - la valeur par défaut de `date_type` **changeait silencieusement** entre `/export` et `/scan` : sur une même période, seules 6 décisions étaient communes aux deux routes ;
+> - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté ;
+> - pour la couche Silver, **96 tests passaient, mais le premier run réel a révélé 6683 anomalies** : la spécification décrivait comme du texte des champs qui sont de vraies listes JSON. Vérifié avec `jsonb_typeof`, corrigé, et testé depuis sur de vraies décisions du Bronze ;
+> - pour les contrôles qualité, une première version du contrôle de cohérence entre numéro et date levait **42 alertes, dont 39 fausses** : en examinant les décisions une par une, j'ai identifié une règle de la source (la numérotation d'une année se prolonge sur les premiers mois de la suivante) et isolé **les 3 vraies incohérences**.
+
 ## Objectif
 - **Bronze** : collecter des décisions de justice et d'autorités administratives, stockées brutes dans PostgreSQL :
   - API Judilibre (Cour de cassation) ;
@@ -51,6 +79,39 @@ Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargé
 
 Options du collecteur Judilibre : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100). Sans `--start`, la collecte reprend après le dernier run réussi du même type de date.
 
+## Structure du projet
+```text
+src/
+├── collector/                # un collecteur par source, chacun avec son point d'entrée run.py
+│   ├── judilibre/            # client de l'API Judilibre (pagination /scan, reprises sur erreur) et collecte incrémentale
+│   ├── adlc_opendata/        # téléchargement et lecture en flux du JSON open data de l'Autorité de la concurrence
+│   └── adlc_scraper/         # client HTTP, parseurs HTML de la liste des décisions et contrôle des écarts avec l'open data
+├── storage/
+│   └── bronze_store.py       # écriture dans Bronze (empreinte du contenu, idempotence) et journal des runs
+├── silver/
+│   ├── common.py             # schéma commun (SilverRow) et conversions partagées (dates, listes)
+│   ├── judilibre.py          # transformation d'une décision Judilibre
+│   ├── adlc_opendata.py      # transformation d'une décision de l'open data de l'Autorité
+│   └── run.py                # reconstruction complète de silver.decisions et comptage des anomalies
+└── quality/
+    ├── checks.yml            # catalogue des contrôles : requêtes SQL, attentes par source, sévérité
+    ├── checks.py             # chargement et validation du catalogue
+    ├── evaluate.py           # comparaison des résultats aux attentes, statuts et verdict
+    └── run.py                # exécution en lecture seule, historisation dans quality.check_results
+sql/
+├── 001_bronze.sql            # schéma bronze : documents bruts et journal des runs
+├── 002_add_date_type.sql     # type de date filtré (update | creation) dans le journal des runs
+├── 003_silver.sql            # schéma silver : table decisions
+└── 004_quality.sql           # schéma quality : table check_results
+tests/
+├── fixtures/                 # page HTML et extrait JSON, pour tester sans appel réseau
+└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité)
+docs/
+├── api/                      # copie de référence de la spécification OpenAPI de Judilibre
+├── sources/                  # analyse des sources (structure des données, écarts constatés)
+└── tasks/                    # spécifications des tâches déléguées à un agent
+```
+
 ## Couche Silver
 Une seule table, `silver.decisions`, alimentée par Judilibre et l'open data de l'Autorité de la concurrence (le scraper reste un outil de contrôle, hors Silver) :
 - un **tronc commun** : numéro, émetteur, type, date, titre, texte intégral, secteurs, URL ;
@@ -95,17 +156,6 @@ Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 - la documentation des pièges rencontrés, notés ci-dessous.
 
 Chaque pull request précise ce qui a été délégué et ce que j'ai fait ou corrigé moi-même.
-
-> [!IMPORTANT]
-> **Pourquoi ne pas tout automatiser ?**
-> J'aurais pu confier l'ensemble du projet à Claude Code, en lui faisant rédiger un plan d'implémentation (par exemple avec les skills Superpowers) puis l'exécuter de bout en bout. J'ai fait le choix inverse : **garder la main sur chaque étape**, pour comprendre ce qui est construit, prendre moi-même les décisions liées aux sources et pouvoir expliquer chaque ligne de code. La délégation à un agent vient ensuite, progressivement, sur des tâches dont je maîtrise le contexte et que je sais vérifier.
->
-> **Ce que cette approche a permis de trouver :**
-> - la route `/export` de l'API Judilibre était **dépréciée**, alors que rien ne le signalait à l'exécution ;
-> - la valeur par défaut de `date_type` **changeait silencieusement** entre `/export` et `/scan` : sur une même période, seules 6 décisions étaient communes aux deux routes ;
-> - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté ;
-> - pour la couche Silver, **96 tests passaient, mais le premier run réel a révélé 6683 anomalies** : la spécification décrivait comme du texte des champs qui sont de vraies listes JSON. Vérifié avec `jsonb_typeof`, corrigé, et testé depuis sur de vraies décisions du Bronze ;
-> - pour les contrôles qualité, une première version du contrôle de cohérence entre numéro et date levait **42 alertes, dont 39 fausses** : en examinant les décisions une par une, j'ai identifié une règle de la source (la numérotation d'une année se prolonge sur les premiers mois de la suivante) et isolé **les 3 vraies incohérences**.
 
 ## Pièges des sources
 
