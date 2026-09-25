@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .common import SilverRow, TransformResult, parse_iso_date, parse_python_list, strip_or_none
+from .common import SilverRow, TransformResult, parse_iso_date, parse_str_list, strip_or_none
 
 SOURCE = "adlc-opendata"
 ISSUER = "Autorité de la concurrence"
@@ -31,20 +31,22 @@ SIMPLIFIEE = {"Oui": True, "Non": False}
 def parse_type_decision(raw: Any) -> tuple[str | None, list[str], list[str]]:
     """Type principal (vocabulaire contrôlé), sous-types et anomalies.
 
-    `type_decision` est soit un libellé (`Avis`), soit une liste JSON (`["Avis", "SOA"]`) :
-    type principal puis sous-types. Une valeur inconnue n'est jamais rabattue sur un type connu.
+    `type_decision` est soit un libellé (`Avis`), soit une vraie liste (`["Avis", "SOA"]`) :
+    type principal puis sous-types. Une liste encodée en texte JSON est lue en secours.
+    Une valeur inconnue n'est jamais rabattue sur un type connu.
     """
     value = raw.strip() if isinstance(raw, str) else raw
     subtypes: list[str] = []
     if isinstance(value, str) and value.startswith("["):
         try:
-            items = json.loads(value)
+            value = json.loads(value)
         except json.JSONDecodeError:
-            items = None
-        if not items or not isinstance(items, list) or not all(isinstance(i, str) for i in items):
             return None, [], ["malformed_type_decision"]
-        value, subtypes = items[0].strip(), [item.strip() for item in items[1:]]
-    main = MAIN_TYPES.get(value) if isinstance(value, str) else None
+    if isinstance(value, list):
+        if not value or not all(isinstance(item, str) for item in value):
+            return None, [], ["malformed_type_decision"]
+        value, subtypes = value[0], [item.strip() for item in value[1:]]
+    main = MAIN_TYPES.get(value.strip()) if isinstance(value, str) else None
     return main, subtypes, [] if main else ["unknown_decision_type"]
 
 
@@ -56,7 +58,7 @@ def normalize_attributes(payload: dict[str, Any]) -> tuple[dict[str, Any], list[
         if name in COLUMN_FIELDS:
             continue
         if name == "entreprises_concernees" and value is not None:
-            parsed = parse_python_list(value)
+            parsed = parse_str_list(value)
             if parsed is None:
                 anomalies.append("malformed_entreprises")
             value = parsed or []
@@ -85,7 +87,7 @@ def transform(external_id: str, payload: dict[str, Any]) -> TransformResult:
 
     sectors: list[str] = []
     if payload.get("secteur_activite") is not None:
-        parsed = parse_python_list(payload["secteur_activite"])
+        parsed = parse_str_list(payload["secteur_activite"])
         if parsed is None:
             anomalies.append("malformed_sectors")
         sectors = parsed or []

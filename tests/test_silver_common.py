@@ -2,7 +2,13 @@ from datetime import date
 
 import pytest
 
-from src.silver.common import dedupe, parse_iso_date, parse_python_list, strip_or_none
+from src.silver.common import (
+    dedupe,
+    parse_iso_date,
+    parse_python_list,
+    parse_str_list,
+    strip_or_none,
+)
 
 
 def test_strip_or_none():
@@ -43,6 +49,21 @@ def test_parse_python_list(value, expected):
 @pytest.mark.parametrize("value", ["['BTP'", "BTP", "[1, 2]", "{'a': 1}", None, ["BTP"]])
 def test_parse_python_list_mal_formee(value):
     assert parse_python_list(value) is None
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ([" BTP ", "", "Énergie"], ["BTP", "Énergie"]),
+        ([], []),
+        ("['BTP']", ["BTP"]),
+        (["BTP", 1], None),
+        (12, None),
+        (None, None),
+    ],
+)
+def test_parse_str_list(value, expected):
+    assert parse_str_list(value) == expected
 
 
 def test_dedupe_garde_l_ordre():

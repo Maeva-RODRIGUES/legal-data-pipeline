@@ -1,10 +1,13 @@
+import json
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 from src.silver.adlc_opendata import ISSUER, SOURCE, transform
 
 URL = "https://www.autoritedelaconcurrence.fr/fr/avis/a"
+FIXTURE = Path(__file__).parent / "fixtures" / "adlc_opendata_decisions.json"
 
 
 def make_payload(**overrides):
@@ -15,8 +18,8 @@ def make_payload(**overrides):
         "date_decision_datetime": "2026-08-04",
         "titre_decision": " Avis relatif au secteur du BTP ",
         "texte_complet_decision": "L'Autorité...",
-        "secteur_activite": "['BTP']",
-        "entreprises_concernees": "['Société A', 'Société B']",
+        "secteur_activite": ["BTP"],
+        "entreprises_concernees": ["Société A", "Société B"],
         "url_site": URL,
         "date_decision_year": 2026,
     }
@@ -45,9 +48,9 @@ def test_decision_complete_sans_anomalie():
         ("DCC", "concentration", []),
         ("Décision", "decision", []),
         ("Avis", "avis", []),
-        ('["Décision", "MC"]', "decision", ["MC"]),
-        ('["DCC", "DEX"]', "concentration", ["DEX"]),
-        ('["Avis", "SOA"]', "avis", ["SOA"]),
+        (["Décision", "MC"], "decision", ["MC"]),
+        (["DCC", "DEX"], "concentration", ["DEX"]),
+        (["Avis", "SOA"], "avis", ["SOA"]),
         ("Lettre du minsitre de l'économie", "lettre_ministre", []),
     ],
 )
@@ -60,7 +63,7 @@ def test_sept_valeurs_connues_de_type_decision(raw, decision_type, subtypes):
 
 @pytest.mark.parametrize(
     "raw",
-    ["Lettre du ministre de l'économie", "Arrêt", '["Arrêt", "MC"]', "", None],
+    ["Lettre du ministre de l'économie", "Arrêt", ["Arrêt", "MC"], "", None, 12],
 )
 def test_type_inconnu_donne_null(raw):
     row, anomalies = transform(URL, make_payload(type_decision=raw))
@@ -68,7 +71,14 @@ def test_type_inconnu_donne_null(raw):
     assert anomalies == ["unknown_decision_type"]
 
 
-@pytest.mark.parametrize("raw", ['["Avis", "SOA"', "[]", "[1, 2]"])
+def test_type_liste_en_texte_lue_en_secours():
+    row, anomalies = transform(URL, make_payload(type_decision='["Avis", "SOA"]'))
+    assert row.decision_type == "avis"
+    assert row.attributes["subtypes"] == ["SOA"]
+    assert anomalies == []
+
+
+@pytest.mark.parametrize("raw", ['["Avis", "SOA"', "[]", "[1, 2]", [], [1, 2]])
 def test_type_json_mal_forme(raw):
     row, anomalies = transform(URL, make_payload(type_decision=raw))
     assert row.decision_type is None
@@ -78,7 +88,12 @@ def test_type_json_mal_forme(raw):
 
 @pytest.mark.parametrize(
     "raw, sectors",
-    [("[' BTP ', 'Énergie']", ["BTP", "Énergie"]), ("[]", []), ("['BTP', '']", ["BTP"])],
+    [
+        ([" BTP ", "Énergie"], ["BTP", "Énergie"]),
+        ([], []),
+        (["BTP", ""], ["BTP"]),
+        ("['BTP']", ["BTP"]),  # secours : liste encodée en texte
+    ],
 )
 def test_secteurs(raw, sectors):
     row, anomalies = transform(URL, make_payload(secteur_activite=raw))
@@ -86,19 +101,27 @@ def test_secteurs(raw, sectors):
     assert anomalies == []
 
 
-def test_secteurs_mal_formes_donnent_liste_vide():
-    row, anomalies = transform(URL, make_payload(secteur_activite="['BTP'"))
+@pytest.mark.parametrize("raw", ["['BTP'", 12, {"BTP": 1}, ["BTP", 1]])
+def test_secteurs_mal_formes_donnent_liste_vide(raw):
+    row, anomalies = transform(URL, make_payload(secteur_activite=raw))
     assert row.sectors == []
     assert anomalies == ["malformed_sectors"]
 
 
 def test_entreprises_converties_en_liste():
-    row, _ = transform(URL, make_payload(entreprises_concernees="[' Société A', '']"))
+    row, _ = transform(URL, make_payload(entreprises_concernees=[" Société A", ""]))
     assert row.attributes["entreprises_concernees"] == ["Société A"]
 
 
-def test_entreprises_mal_formees():
-    row, anomalies = transform(URL, make_payload(entreprises_concernees="Société A"))
+def test_entreprises_en_texte_lues_en_secours():
+    row, anomalies = transform(URL, make_payload(entreprises_concernees="['Société A']"))
+    assert row.attributes["entreprises_concernees"] == ["Société A"]
+    assert anomalies == []
+
+
+@pytest.mark.parametrize("raw", ["Société A", 12, ["Société A", None]])
+def test_entreprises_mal_formees(raw):
+    row, anomalies = transform(URL, make_payload(entreprises_concernees=raw))
     assert row.attributes["entreprises_concernees"] == []
     assert anomalies == ["malformed_entreprises"]
 
@@ -147,3 +170,45 @@ def test_ligne_sans_identifiant_sautee():
     row, anomalies = transform("", make_payload())
     assert row is None
     assert anomalies == ["missing_external_id"]
+
+
+@pytest.fixture(scope="module")
+def real_rows():
+    """Trois décisions réelles extraites du Bronze : avis, concentration, décision MC."""
+    records = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    return {r["payload"]["id_decision"]: transform(r["external_id"], r["payload"]) for r in records}
+
+
+def test_decisions_reelles_sans_anomalie(real_rows):
+    assert {id_: anomalies for id_, (_, anomalies) in real_rows.items()} == {
+        "02-A-06": [],
+        "24-DCC-101": [],
+        "01-MC-05": [],
+    }
+
+
+def test_avis_reel(real_rows):
+    row, _ = real_rows["02-A-06"]
+    assert row.decision_type == "avis"
+    assert row.attributes["subtypes"] == []
+    assert row.decision_date == date(2002, 5, 4)
+    assert row.sectors == ["Energie / Environnement"]
+    assert row.attributes["entreprises_concernees"] == ["Opérateurs du secteur électrique"]
+    assert "decision_simplifiee" not in row.attributes
+
+
+def test_decision_mc_reelle(real_rows):
+    row, _ = real_rows["01-MC-05"]
+    assert row.decision_type == "decision"
+    assert row.attributes["subtypes"] == ["MC"]
+    assert row.decision_date == date(2001, 8, 27)
+    assert row.sectors == ["Agriculture / Agro-alimentaire", "Grande consommation"]
+
+
+def test_concentration_reelle(real_rows):
+    row, _ = real_rows["24-DCC-101"]
+    assert row.decision_type == "concentration"
+    assert row.decision_date == date(2024, 5, 24)
+    assert row.sectors == ["Transports"]
+    assert row.attributes["entreprises_concernees"] == ["groupe Transarc", "Infranity"]
+    assert row.attributes["decision_simplifiee"] is True

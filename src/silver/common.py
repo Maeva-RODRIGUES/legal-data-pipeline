@@ -56,9 +56,24 @@ def parse_python_list(value: Any) -> list[str] | None:
         parsed = ast.literal_eval(value.strip())
     except (ValueError, SyntaxError):
         return None
-    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+    return clean_str_list(parsed)
+
+
+def clean_str_list(value: Any) -> list[str] | None:
+    """Éléments nettoyés, chaînes vides retirées ; None si ce n'est pas une liste de chaînes."""
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         return None
-    return [item.strip() for item in parsed if item.strip()]
+    return [item.strip() for item in value if item.strip()]
+
+
+def parse_str_list(value: Any) -> list[str] | None:
+    """Vraie liste JSON (cas normal) ou, en secours, liste Python encodée en texte.
+
+    Renvoie None pour tout autre type ou une liste mal formée.
+    """
+    if isinstance(value, str):
+        return parse_python_list(value)
+    return clean_str_list(value)
 
 
 def dedupe(items: Iterable[Any]) -> list[Any]:
