@@ -79,6 +79,39 @@ Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargé
 
 Options du collecteur Judilibre : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100). Sans `--start`, la collecte reprend après le dernier run réussi du même type de date.
 
+## Structure du projet
+```text
+src/
+├── collector/                # un collecteur par source, chacun avec son point d'entrée run.py
+│   ├── judilibre/            # client de l'API Judilibre (pagination /scan, reprises sur erreur) et collecte incrémentale
+│   ├── adlc_opendata/        # téléchargement et lecture en flux du JSON open data de l'Autorité de la concurrence
+│   └── adlc_scraper/         # client HTTP, parseurs HTML de la liste des décisions et contrôle des écarts avec l'open data
+├── storage/
+│   └── bronze_store.py       # écriture dans Bronze (empreinte du contenu, idempotence) et journal des runs
+├── silver/
+│   ├── common.py             # schéma commun (SilverRow) et conversions partagées (dates, listes)
+│   ├── judilibre.py          # transformation d'une décision Judilibre
+│   ├── adlc_opendata.py      # transformation d'une décision de l'open data de l'Autorité
+│   └── run.py                # reconstruction complète de silver.decisions et comptage des anomalies
+└── quality/
+    ├── checks.yml            # catalogue des contrôles : requêtes SQL, attentes par source, sévérité
+    ├── checks.py             # chargement et validation du catalogue
+    ├── evaluate.py           # comparaison des résultats aux attentes, statuts et verdict
+    └── run.py                # exécution en lecture seule, historisation dans quality.check_results
+sql/
+├── 001_bronze.sql            # schéma bronze : documents bruts et journal des runs
+├── 002_add_date_type.sql     # type de date filtré (update | creation) dans le journal des runs
+├── 003_silver.sql            # schéma silver : table decisions
+└── 004_quality.sql           # schéma quality : table check_results
+tests/
+├── fixtures/                 # page HTML et extrait JSON, pour tester sans appel réseau
+└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité)
+docs/
+├── api/                      # copie de référence de la spécification OpenAPI de Judilibre
+├── sources/                  # analyse des sources (structure des données, écarts constatés)
+└── tasks/                    # spécifications des tâches déléguées à un agent
+```
+
 ## Couche Silver
 Une seule table, `silver.decisions`, alimentée par Judilibre et l'open data de l'Autorité de la concurrence (le scraper reste un outil de contrôle, hors Silver) :
 - un **tronc commun** : numéro, émetteur, type, date, titre, texte intégral, secteurs, URL ;
