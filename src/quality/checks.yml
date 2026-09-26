@@ -85,6 +85,7 @@
     judilibre: {op: "==", value: 0}
     adlc-opendata: {op: "==", value: 0}
 
+
 # Validity -------------------------------------------------------------------
 
 - name: impossible_decision_date
@@ -162,13 +163,14 @@
     SELECT source, round(extract(epoch FROM now() - max(finished_at)) / 3600) AS value
     FROM bronze.collection_runs
     WHERE status = 'success'
-      AND source IN ('judilibre', 'adlc-opendata', 'adlc-scraper', 'silver')
+      AND source IN ('judilibre', 'adlc-opendata', 'adlc-scraper', 'silver', 'search')
     GROUP BY source;
   expect:
     judilibre: {op: "<=", value: 168}
     adlc-opendata: {op: "<=", value: 168}
     adlc-scraper: {op: "<=", value: 168}
     silver: {op: "<=", value: 168}
+    search: {op: "<=", value: 168}
 
 - name: site_decisions_missing_from_opendata
   dimension: freshness
@@ -180,8 +182,8 @@
     WHERE s.source = 'adlc-scraper'
       AND NOT EXISTS (
         SELECT 1 FROM bronze.raw_documents o
-          WHERE o.source = 'adlc-opendata'
-            AND rtrim(btrim(o.external_id), '/') = rtrim(btrim(s.external_id), '/')
+        WHERE o.source = 'adlc-opendata'
+          AND rtrim(btrim(o.external_id), '/') = rtrim(btrim(s.external_id), '/')
       );
   expect:
     adlc-scraper: {op: "==", value: 0}
