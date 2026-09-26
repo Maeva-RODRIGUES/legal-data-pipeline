@@ -73,6 +73,7 @@ Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL
 Get-Content sql\003_silver.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 Get-Content sql\004_quality.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 Get-Content sql\005_search.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
+Get-Content sql\006_findability.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 ```
 
 Sous Windows, utiliser `127.0.0.1` plutôt que `localhost` dans `DATABASE_URL` et `ELASTICSEARCH_URL` : `localhost` est d'abord résolu en IPv6 (`::1`), et la connexion au conteneur peut alors prendre plus de deux minutes avant de se rabattre sur l'IPv4.
@@ -105,13 +106,17 @@ src/
     ├── document.py           # construction d'un document à partir d'une ligne Silver
     ├── index.py              # accès à Elasticsearch (création, envoi en masse, comptes, alias)
     ├── rebuild.py            # reconstruction d'un index et bascule de l'alias si les comptes concordent
-    └── run.py                # lecture de Silver, statistiques dans search.index_stats, rapport
+    ├── run.py                # lecture de Silver, statistiques dans search.index_stats, rapport
+    ├── query.py              # requêtes par numéro et par titre, partagées avec la future API
+    ├── findability.py        # échantillon, ambiguïtés, rangs, métriques et rapport de l'évaluation
+    └── evaluate.py           # évaluation de la findability, résultats dans search.findability_*
 sql/
 ├── 001_bronze.sql            # schéma bronze : documents bruts et journal des runs
 ├── 002_add_date_type.sql     # type de date filtré (update | creation) dans le journal des runs
 ├── 003_silver.sql            # schéma silver : table decisions
 ├── 004_quality.sql           # schéma quality : table check_results
-└── 005_search.sql            # schéma search : table index_stats
+├── 005_search.sql            # schéma search : table index_stats
+└── 006_findability.sql       # schéma search : tables findability_runs et findability_results
 tests/
 ├── fixtures/                 # page HTML et extrait JSON, pour tester sans appel réseau
 └── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche)
@@ -161,6 +166,19 @@ Les décisions de Silver sont indexées dans Elasticsearch (service `elasticsear
 - **Retour arrière** : après la bascule, l'index précédent est conservé et les plus anciens sont supprimés. Un échec de ce nettoyage est signalé par un avertissement, sans changer le code de sortie.
 
 Chaque run écrit dans `search.index_stats` une ligne par source (compte Silver, compte indexé, rejets, bascule ou non), même quand l'alias n'est pas basculé. Il est journalisé dans `bronze.collection_runs` (source `search`) : statut `failed`, avec la raison dans `error`, si l'alias n'est pas basculé. Le script sort alors avec le code 1 (0 sinon).
+
+### Évaluation de la findability
+`python -m src.search.evaluate [--title-boost 1 2 3]` mesure si les décisions de Silver se retrouvent dans l'index, sur un échantillon reproductible. Spécification : [`docs/tasks/index-quality.md`](docs/tasks/index-quality.md).
+
+- **Échantillon** : 200 décisions de l'Autorité tirées par `md5(external_id)`, plus toutes celles sans texte intégral, toutes celles dont le numéro est partagé et toutes les décisions de Judilibre.
+- **Deux modes**, via l'alias `decisions`, dans le top 10 :
+  - `number` : recherche exacte sur le numéro, pour toutes les décisions de l'échantillon ;
+  - `title` : le titre de la décision comme texte de recherche, sur le titre pondéré (`--title-boost`, 3 par défaut, décimales acceptées) et le texte intégral ; décisions de l'Autorité seulement (Judilibre n'a pas de titre). La requête est celle de [`src/search/query.py`](src/search/query.py), que l'API de recherche reprendra.
+- **Métriques** : hit@1, hit@10 et MRR (moyenne de 1/rang, 0 hors du top 10), au total et par groupe : texte présent ou non, titre ambigu ou non, numéro ambigu ou non. Un titre est ambigu s'il appartient à plusieurs décisions de Silver (espaces autour ignorés, apostrophes `’` et `'` confondues comme à l'indexation) ; un numéro, s'il est partagé (casse ignorée, comme le normaliseur de l'index). Un groupe vide n'a pas de métriques (`NULL` en base, « - » dans le rapport).
+- **Stockage** : une ligne par mode et par poids du titre dans `search.findability_runs`, une ligne par décision cherchée (rang, `NULL` hors du top 10, et nombre de résultats) dans `search.findability_results`.
+- **Rapport** : métriques par mode, poids et groupe, puis les décisions absentes du top 10 par numéro et par titre, avec leur rang pour chaque poids.
+
+Le run est journalisé dans `bronze.collection_runs` (source `search-eval`). Il échoue si l'alias `decisions` est absent, ou s'il bascule vers un autre index pendant l'évaluation (les résultats mélangeraient deux index). Sinon, le script sort avec le code 0 : les seuils relèvent des contrôles qualité.
 
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
