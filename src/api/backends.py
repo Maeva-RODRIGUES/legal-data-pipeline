@@ -137,7 +137,8 @@ class ElasticsearchBackend:
 
     @classmethod
     def from_url(cls, url: str) -> ElasticsearchBackend:
-        return cls(Elasticsearch(url, request_timeout=ES_TIMEOUT), url)
+        # Un seul nœud : une nouvelle tentative ne ferait que retarder la 503.
+        return cls(Elasticsearch(url, request_timeout=ES_TIMEOUT, max_retries=0), url)
 
     def search(self, body: Mapping[str, Any]) -> Mapping[str, Any]:
         try:
