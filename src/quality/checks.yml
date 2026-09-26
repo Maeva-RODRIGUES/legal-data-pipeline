@@ -78,10 +78,11 @@
       FROM silver.decisions
       GROUP BY source
     )
-    SELECT s.source, s.n - coalesce(i.indexed_count, 0) AS value
+    SELECT source, coalesce(s.n, 0) - coalesce(i.indexed_count, 0) AS value
     FROM silver s
-    LEFT JOIN indexed i USING (source);
+    FULL OUTER JOIN indexed i USING (source);
   expect:
+    default: {op: "==", value: 0}
     judilibre: {op: "==", value: 0}
     adlc-opendata: {op: "==", value: 0}
 
