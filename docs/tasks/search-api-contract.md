@@ -249,8 +249,8 @@ Dépendances FastAPI remplacées (`app.dependency_overrides`) par de faux client
 ## 10. Fichiers prévus (phase 2)
 ```
 src/api/__init__.py
-src/api/main.py          # application, gestionnaires d'erreurs, routes
-src/api/deps.py          # configuration, clients Elasticsearch et PostgreSQL (lecture seule), dépendances
+src/api/main.py          # application, gestionnaires d'erreurs, routes, dépendances
+src/api/backends.py      # configuration, accès Elasticsearch et PostgreSQL (lecture seule), erreurs 503
 src/api/search.py        # construction du corps de recherche autour de query.py, mise en forme des résultats
 src/api/models.py        # modèles Pydantic des réponses
 src/api/display.py       # display_title

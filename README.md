@@ -85,6 +85,7 @@ python -m src.collector.adlc_scraper.run                  # contrôle de fraîch
 python -m src.silver.run                                  # reconstruction complète de silver.decisions depuis Bronze
 python -m src.quality.run                                 # contrôles qualité ; code de sortie 1 si un contrôle bloquant échoue
 python -m src.search.run                                  # reconstruction de l'index decisions ; code de sortie 1 si l'alias n'est pas basculé
+uvicorn src.api.main:app                                  # API de recherche en lecture seule ; documentation : http://127.0.0.1:8000/docs
 ```
 
 Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer à la main les migrations Silver, qualité et recherche (PowerShell) :
@@ -120,15 +121,21 @@ src/
 │   ├── checks.py             # chargement et validation du catalogue
 │   ├── evaluate.py           # comparaison des résultats aux attentes, statuts et verdict
 │   └── run.py                # exécution en lecture seule, historisation dans quality.check_results
-└── search/
-    ├── mapping.json          # mapping de l'index : champs, analyseur français, normaliseur des numéros
-    ├── document.py           # construction d'un document à partir d'une ligne Silver
-    ├── index.py              # accès à Elasticsearch (création, envoi en masse, comptes, alias)
-    ├── rebuild.py            # reconstruction d'un index et bascule de l'alias si les comptes concordent
-    ├── run.py                # lecture de Silver, statistiques dans search.index_stats, rapport
-    ├── query.py              # requêtes par numéro et par titre, partagées avec la future API
-    ├── findability.py        # échantillon, ambiguïtés, rangs, métriques et rapport de l'évaluation
-    └── evaluate.py           # évaluation de la findability, résultats dans search.findability_*
+├── search/
+│   ├── mapping.json          # mapping de l'index : champs, analyseur français, normaliseur des numéros
+│   ├── document.py           # construction d'un document à partir d'une ligne Silver
+│   ├── index.py              # accès à Elasticsearch (création, envoi en masse, comptes, alias)
+│   ├── rebuild.py            # reconstruction d'un index et bascule de l'alias si les comptes concordent
+│   ├── run.py                # lecture de Silver, statistiques dans search.index_stats, rapport
+│   ├── query.py              # requêtes par numéro et par titre, partagées avec l'API
+│   ├── findability.py        # échantillon, ambiguïtés, rangs, métriques et rapport de l'évaluation
+│   └── evaluate.py           # évaluation de la findability, résultats dans search.findability_*
+└── api/
+    ├── main.py               # application FastAPI : routes, format unique des erreurs
+    ├── search.py             # corps de recherche autour de query.py (filtres, pagination, surlignage)
+    ├── backends.py           # Elasticsearch et PostgreSQL en lecture seule, indisponibilité en 503
+    ├── models.py             # modèles des réponses, repris dans la documentation /docs
+    └── display.py            # titre d'affichage des décisions sans titre (citation Judilibre)
 sql/
 ├── 001_bronze.sql            # schéma bronze : documents bruts et journal des runs
 ├── 002_add_date_type.sql     # type de date filtré (update | creation) dans le journal des runs
@@ -138,7 +145,7 @@ sql/
 └── 006_findability.sql       # schéma search : tables findability_runs et findability_results
 tests/
 ├── fixtures/                 # page HTML et extrait JSON, pour tester sans appel réseau
-└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche)
+└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche, API)
 docs/
 ├── api/                      # copie de référence de la spécification OpenAPI de Judilibre
 ├── sources/                  # analyse des sources (structure des données, écarts constatés)
@@ -202,6 +209,28 @@ Chaque run écrit dans `search.index_stats` une ligne par source (compte Silver,
 Le run est journalisé dans `bronze.collection_runs` (source `search-eval`). Il échoue si l'alias `decisions` est absent, ou s'il bascule vers un autre index pendant l'évaluation (les résultats mélangeraient deux index). Sinon, le script sort avec le code 0 : les seuils relèvent des contrôles qualité.
 
 **Poids du titre : 2.** Mesuré sur l'échantillon (runs 26 à 28) : le poids 1 donne une 1ʳᵉ position pour 93,8 % des décisions par titre, les poids 2 et 3 pour 96,3 %, avec des résultats identiques dans tous les groupes. À résultat égal, le plus petit poids est retenu : l'évaluation utilise le titre complet comme requête, ce qui favorise le titre, alors qu'une recherche réelle de quelques mots se trouvera souvent dans le texte. Les décisions perdant la 1ʳᵉ position sont toutes des décisions au titre ambigu (82 titres partagés par 183 décisions dans Silver) : les 223 décisions de l'échantillon au titre non ambigu sont toutes retrouvées en 1ʳᵉ position. Limite connue : cette évaluation mesure la capacité à retrouver une décision dont on connaît le titre, pas la pertinence de recherches libres.
+
+## API
+Une API FastAPI en lecture seule expose l'index, la couche Silver, les runs et les contrôles qualité. Elle lit `DATABASE_URL` et `ELASTICSEARCH_URL` (voir `.env.example`) et refuse de démarrer si l'une manque.
+
+```bash
+uvicorn src.api.main:app        # http://127.0.0.1:8000/docs : documentation interactive
+```
+
+| Route | Rôle |
+|---|---|
+| `GET /search?q=...` | recherche plein texte : la requête évaluée de [`src/search/query.py`](src/search/query.py) (titre pondéré 2, texte intégral), extraits surlignés |
+| `GET /search?number=...` | recherche par numéro exact (casse et accents ignorés), exclusive de `q`, sans surlignage |
+| `GET /decisions/{source}?id=...` | détail d'une décision, lu dans `silver.decisions` ; `detail_path` de chaque résultat de recherche |
+| `GET /runs` | derniers runs du pipeline (`bronze.collection_runs`), filtrables par source et statut |
+| `GET /quality/latest` | résultats du dernier run des contrôles qualité, avec leur verdict |
+| `GET /health` | état de PostgreSQL et d'Elasticsearch (alias `decisions` compris) ; 503 si l'un est en panne |
+
+- **Filtres de recherche** (`source`, `decision_type`, `date_from`, `date_to`, `sector`, répétables sauf les dates) et **pagination** (`page`, `page_size` ≤ 50) sont ajoutés autour de la requête évaluée, sans la réécrire ni changer les scores.
+- **Titre d'affichage** : les décisions Judilibre n'ont pas de titre ; l'API construit une citation (`Cour de cassation, 29 juillet 2026, n° 26-83.146`), jamais stockée.
+- **Erreurs** : un format unique, `{"error": {"code", "message", "details"}}` ; 422 pour un paramètre invalide, 404 pour une décision absente, 503 si Elasticsearch ou PostgreSQL ne répond pas (chaque route ne dépend que de son service).
+
+Contrat détaillé (paramètres, réponses, erreurs) : [`docs/tasks/search-api-contract.md`](docs/tasks/search-api-contract.md).
 
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
