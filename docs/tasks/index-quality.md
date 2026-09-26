@@ -19,16 +19,17 @@ Measure how well Silver decisions can be found in the Elasticsearch index, on a 
 - `title`: the decision's own title as query text, `multi_match` over `title^<boost>` and `text`, same query the future search API will use (ADLC decisions with a title).
 - A decision is found at rank r if its document id (`source|external_id`) is the r-th hit; searched in the top 10 only.
 - The query goes through the `decisions` alias.
+- A decision number shared by several decisions (5 known for the ADLC) can rank the target second: for the `number` mode, hit@10 is the relevant metric, and those decisions are reported as a separate group (`ambiguous_number`).
 
 ## Metrics
-For each mode (and title boost), overall and per group (`has_text` true/false; ambiguous title yes/no):
+For each mode (and title boost), overall and per group (`has_text` true/false; ambiguous title yes/no; ambiguous number yes/no):
 - hit@1, hit@10 (share of decisions found at rank 1, in the top 10);
 - MRR (mean of 1/rank, 0 if not found in the top 10).
 
 ## Storage
 Migration `sql/006_findability.sql`, schema `search`:
 - `findability_runs`: `run_id` (reference to `bronze.collection_runs`), `index_name`, `mode`, `title_boost` (nullable for `number`), `sample_size`, `hit_at_1`, `hit_at_10`, `mrr`, `created_at`;
-- `findability_results`: `run_id`, `mode`, `title_boost`, `doc_id`, `has_text`, `ambiguous_title`, `rank` (nullable), `total_hits`.
+- `findability_results`: `run_id`, `mode`, `title_boost`, `doc_id`, `has_text`, `ambiguous_title`, `ambiguous_number`, `rank` (nullable), `total_hits`.
 Document in the README how to apply it by hand.
 
 ## Run script
@@ -39,7 +40,7 @@ Document in the README how to apply it by hand.
 
 ## Tests (no Elasticsearch, no database, no network)
 - Metrics on hand-made rankings (found at 1, at 3, absent; empty sample).
-- Ambiguous title detection.
+- Ambiguous title and ambiguous number detection.
 - Query building for both modes, including the title boost.
 - Rank extraction from a fake search response.
 
