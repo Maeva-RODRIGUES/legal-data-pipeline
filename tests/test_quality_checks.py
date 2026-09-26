@@ -43,6 +43,7 @@ def test_le_vrai_catalogue_se_charge():
         "missing_decision_date",
         "missing_decision_type_pct",
         "empty_text",
+        "silver_rows_missing_from_index",
         "impossible_decision_date",
         "duplicate_decision_number",
         "number_year_mismatch",
