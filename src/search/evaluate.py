@@ -30,7 +30,7 @@ from .rebuild import previous_index
 
 SOURCE = "search-eval"
 DATE_TYPE = "evaluation"
-DEFAULT_BOOSTS = [3.0]
+DEFAULT_BOOSTS = [2.0]
 MAX_BOOST = Decimal("1000")  # title_boost NUMERIC(5,2)
 
 # Spec : 200 décisions ADLC tirées par md5, plus les ADLC sans texte, les décisions à numéro
@@ -91,7 +91,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=boost_arg,
         nargs="+",
         default=DEFAULT_BOOSTS,
-        help="poids du titre dans le mode title (défaut : 3)",
+        help="poids du titre dans le mode title (défaut : 2)",
     )
     args = parser.parse_args(argv)
     args.title_boost = list(dict.fromkeys(args.title_boost))  # doublons retirés, ordre gardé

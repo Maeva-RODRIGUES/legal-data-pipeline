@@ -55,7 +55,7 @@ class FakeAliasClient:
 
 
 def test_boost_par_defaut():
-    assert parse_args([]).title_boost == [3.0]
+    assert parse_args([]).title_boost == [2.0]
 
 
 def test_plusieurs_boosts_doublons_retires():
