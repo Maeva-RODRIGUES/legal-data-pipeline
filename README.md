@@ -18,7 +18,7 @@ flowchart LR
 ## En bref
 - **3 sources** : l'API Judilibre, l'open data et le site de l'Autorité de la concurrence.
 - **6707 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 24 de Judilibre.
-- **9 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
+- **10 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
 - **168 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
