@@ -164,7 +164,7 @@
     SELECT source, round(extract(epoch FROM now() - max(finished_at)) / 3600) AS value
     FROM bronze.collection_runs
     WHERE status = 'success'
-      AND source IN ('judilibre', 'adlc-opendata', 'adlc-scraper', 'silver', 'search')
+      AND source IN ('judilibre', 'adlc-opendata', 'adlc-scraper', 'silver', 'search', 'search-eval')
     GROUP BY source;
   expect:
     judilibre: {op: "<=", value: 168}
@@ -172,6 +172,7 @@
     adlc-scraper: {op: "<=", value: 168}
     silver: {op: "<=", value: 168}
     search: {op: "<=", value: 168}
+    search-eval: {op: "<=", value: 168}
 
 - name: site_decisions_missing_from_opendata
   dimension: freshness
