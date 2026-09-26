@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 TOP_K = 10
+DEFAULT_TITLE_BOOST = 2.0  # choisi après évaluation : égal à 3 sur l'échantillon, plus petit
 
 
 def number_query(number: str) -> dict[str, Any]:

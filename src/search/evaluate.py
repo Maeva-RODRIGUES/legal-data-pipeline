@@ -25,12 +25,12 @@ from .findability import (
     targets_for,
 )
 from .index import ALIAS, ElasticsearchIndexClient, IndexClient
-from .query import number_query, search_body, title_query
+from .query import DEFAULT_TITLE_BOOST, format_boost, number_query, search_body, title_query
 from .rebuild import previous_index
 
 SOURCE = "search-eval"
 DATE_TYPE = "evaluation"
-DEFAULT_BOOSTS = [2.0]
+DEFAULT_BOOSTS = [DEFAULT_TITLE_BOOST]
 MAX_BOOST = Decimal("1000")  # title_boost NUMERIC(5,2)
 
 # Spec : 200 décisions ADLC tirées par md5, plus les ADLC sans texte, les décisions à numéro
@@ -91,7 +91,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=boost_arg,
         nargs="+",
         default=DEFAULT_BOOSTS,
-        help="poids du titre dans le mode title (défaut : 2)",
+        help=f"poids du titre dans le mode title (défaut : {format_boost(DEFAULT_TITLE_BOOST)})",
     )
     args = parser.parse_args(argv)
     args.title_boost = list(dict.fromkeys(args.title_boost))  # doublons retirés, ordre gardé
