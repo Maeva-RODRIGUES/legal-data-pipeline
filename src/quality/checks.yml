@@ -56,6 +56,37 @@
     default: {op: "==", value: 0}
     adlc-opendata: {op: "<=", value: 30}
 
+- name: silver_rows_missing_from_index
+  dimension: completeness
+  severity: error
+  description: >-
+    Silver decisions missing from the index currently behind the alias (last run
+    with alias_switched). Also detects a stale index after a Silver rebuild.
+  sql: |
+    WITH last_switch AS (
+      SELECT max(run_id) AS run_id
+      FROM search.index_stats
+      WHERE alias_switched
+    ),
+    indexed AS (
+      SELECT source, indexed_count
+      FROM search.index_stats
+      WHERE run_id = (SELECT run_id FROM last_switch)
+    ),
+    silver AS (
+      SELECT source, count(*) AS n
+      FROM silver.decisions
+      GROUP BY source
+    )
+    SELECT source, coalesce(s.n, 0) - coalesce(i.indexed_count, 0) AS value
+    FROM silver s
+    FULL OUTER JOIN indexed i USING (source);
+  expect:
+    default: {op: "==", value: 0}
+    judilibre: {op: "==", value: 0}
+    adlc-opendata: {op: "==", value: 0}
+
+
 # Validity -------------------------------------------------------------------
 
 - name: impossible_decision_date
@@ -133,13 +164,15 @@
     SELECT source, round(extract(epoch FROM now() - max(finished_at)) / 3600) AS value
     FROM bronze.collection_runs
     WHERE status = 'success'
-      AND source IN ('judilibre', 'adlc-opendata', 'adlc-scraper', 'silver')
+      AND source IN ('judilibre', 'adlc-opendata', 'adlc-scraper', 'silver', 'search', 'search-eval')
     GROUP BY source;
   expect:
     judilibre: {op: "<=", value: 168}
     adlc-opendata: {op: "<=", value: 168}
     adlc-scraper: {op: "<=", value: 168}
     silver: {op: "<=", value: 168}
+    search: {op: "<=", value: 168}
+    search-eval: {op: "<=", value: 168}
 
 - name: site_decisions_missing_from_opendata
   dimension: freshness
@@ -151,8 +184,8 @@
     WHERE s.source = 'adlc-scraper'
       AND NOT EXISTS (
         SELECT 1 FROM bronze.raw_documents o
-          WHERE o.source = 'adlc-opendata'
-            AND rtrim(btrim(o.external_id), '/') = rtrim(btrim(s.external_id), '/')
+        WHERE o.source = 'adlc-opendata'
+          AND rtrim(btrim(o.external_id), '/') = rtrim(btrim(s.external_id), '/')
       );
   expect:
     adlc-scraper: {op: "==", value: 0}

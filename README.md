@@ -1,6 +1,18 @@
 # legal-data-pipeline
 
 ![CI](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/Maeva-RODRIGUES/legal-data-pipeline)
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.19-005571?logo=elasticsearch&logoColor=white)
+![Podman](https://img.shields.io/badge/Podman-Compose-892CA0?logo=podman&logoColor=white)
+![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-scraping-4B8BBE?logo=python&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-268_tests-0A9EDC?logo=pytest&logoColor=white)
+![Ruff](https://img.shields.io/badge/Ruff-lint-D7FF64?logo=ruff&logoColor=black)
+![pre-commit](https://img.shields.io/badge/pre--commit-enabled-FAB040?logo=precommit&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white)
+![Claude Code](https://img.shields.io/badge/Claude_Code-agent-D97757?logo=anthropic&logoColor=white)
 
 Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration et contrôle qualité.
 
@@ -10,16 +22,20 @@ flowchart LR
     O[Open data ADLC] --> B
     W[Scraper ADLC<br/>de fraîcheur] --> B
     B --> S[(Silver<br/>schéma commun)]
+    S --> E[(Elasticsearch<br/>alias decisions)]
+    E -. évaluation .-> F[(Findability)]
     B -. lecture .-> Q{{Contrôles qualité}}
     S -. lecture .-> Q
+    F -. lecture .-> Q
     Q --> R[(quality.check_results)]
 ```
 
 ## En bref
 - **3 sources** : l'API Judilibre, l'open data et le site de l'Autorité de la concurrence.
 - **6707 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 24 de Judilibre.
-- **9 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
-- **168 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+- **12 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
+- **Un index Elasticsearch** reconstruit à chaque run, avec une évaluation de la trouvabilité : 100 % des décisions retrouvées par leur numéro, et 100 % des décisions au titre non ambigu retrouvées en 1ʳᵉ position par leur titre.
+- **268 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
 > **Pourquoi ne pas tout automatiser ?**
@@ -38,8 +54,8 @@ flowchart LR
   - jeu de données open data de l'Autorité de la concurrence (data.gouv.fr) ;
   - scraper du site de l'Autorité de la concurrence, pour détecter les décisions pas encore publiées en open data.
 - **Silver** : ramener les décisions de Judilibre et de l'open data à un schéma commun.
-- **Qualité** : mesurer l'écart entre ce qui est collecté et ce qui est exploitable.
-- **Bonus** : planification avec Celery, indexation Elasticsearch, API de recherche FastAPI.
+- **Recherche** : indexer les décisions dans Elasticsearch et mesurer leur trouvabilité.
+- **Bonus** : planification avec Celery, API de recherche FastAPI.
 
 ## Avancement
 - [x] Étape 1a : collecteur Judilibre (pagination, reprises sur erreur, collecte incrémentale, journal des runs), testé sur données réelles ; idempotence vérifiée (relance d'un run : 0 nouveau, 14 inchangés)
@@ -50,7 +66,7 @@ flowchart LR
 - [x] Étape 2 : couche Silver (schéma commun Judilibre et Autorité de la concurrence, reconstruction complète à chaque run, 6707 décisions, aucune anomalie), réalisée par délégation à un agent
 - [x] Étape 3 : contrôles qualité (9 contrôles sur 5 dimensions, résultats historisés, écarts connus distingués des nouveaux) ; catalogue de requêtes écrit par moi, moteur réalisé par délégation à un agent
 - [ ] Étape 4 : planification du pipeline avec Celery et Redis (Celery Beat)
-- [ ] Étape 5 : Elasticsearch et API de recherche FastAPI
+- [ ] Étape 5 : Elasticsearch et API de recherche FastAPI (en cours : index reconstruit avec bascule d'alias, et évaluation de la trouvabilité faits ; API FastAPI à venir)
 
 ## Lancer le projet
 ```bash
@@ -73,6 +89,7 @@ Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL
 Get-Content sql\003_silver.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 Get-Content sql\004_quality.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 Get-Content sql\005_search.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
+Get-Content sql\006_findability.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 ```
 
 Sous Windows, utiliser `127.0.0.1` plutôt que `localhost` dans `DATABASE_URL` et `ELASTICSEARCH_URL` : `localhost` est d'abord résolu en IPv6 (`::1`), et la connexion au conteneur peut alors prendre plus de deux minutes avant de se rabattre sur l'IPv4.
@@ -105,13 +122,17 @@ src/
     ├── document.py           # construction d'un document à partir d'une ligne Silver
     ├── index.py              # accès à Elasticsearch (création, envoi en masse, comptes, alias)
     ├── rebuild.py            # reconstruction d'un index et bascule de l'alias si les comptes concordent
-    └── run.py                # lecture de Silver, statistiques dans search.index_stats, rapport
+    ├── run.py                # lecture de Silver, statistiques dans search.index_stats, rapport
+    ├── query.py              # requêtes par numéro et par titre, partagées avec la future API
+    ├── findability.py        # échantillon, ambiguïtés, rangs, métriques et rapport de l'évaluation
+    └── evaluate.py           # évaluation de la findability, résultats dans search.findability_*
 sql/
 ├── 001_bronze.sql            # schéma bronze : documents bruts et journal des runs
 ├── 002_add_date_type.sql     # type de date filtré (update | creation) dans le journal des runs
 ├── 003_silver.sql            # schéma silver : table decisions
 ├── 004_quality.sql           # schéma quality : table check_results
-└── 005_search.sql            # schéma search : table index_stats
+├── 005_search.sql            # schéma search : table index_stats
+└── 006_findability.sql       # schéma search : tables findability_runs et findability_results
 tests/
 ├── fixtures/                 # page HTML et extrait JSON, pour tester sans appel réseau
 └── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche)
@@ -152,6 +173,8 @@ L'option `--checks <chemin>` permet de lancer un autre catalogue, par exemple un
 
 **Premier run (25/09/2026)** : 9 contrôles, 18 résultats, tous `pass`. Écarts connus, acceptés à leur niveau actuel : 30 décisions de l'Autorité sans texte intégral, 5 numéros en double, 3 dates impossibles au regard du numéro, et le type de décision vide pour toutes les décisions de Judilibre.
 
+**Au 26/09/2026** : 12 contrôles, 24 résultats, tous `pass`, dont la complétude et la fraîcheur de l'index, et sa trouvabilité (100 % par numéro, 100 % en 1ʳᵉ position par titre hors titres ambigus).
+
 ## Recherche
 Les décisions de Silver sont indexées dans Elasticsearch (service `elasticsearch` du `docker-compose.yml`, un seul nœud, sécurité désactivée : usage local uniquement). Le mapping, dans [`src/search/mapping.json`](src/search/mapping.json), est strict : un champ non déclaré fait rejeter le document.
 
@@ -162,11 +185,26 @@ Les décisions de Silver sont indexées dans Elasticsearch (service `elasticsear
 
 Chaque run écrit dans `search.index_stats` une ligne par source (compte Silver, compte indexé, rejets, bascule ou non), même quand l'alias n'est pas basculé. Il est journalisé dans `bronze.collection_runs` (source `search`) : statut `failed`, avec la raison dans `error`, si l'alias n'est pas basculé. Le script sort alors avec le code 1 (0 sinon).
 
+### Évaluation de la findability
+`python -m src.search.evaluate [--title-boost 1 2 3]` mesure si les décisions de Silver se retrouvent dans l'index, sur un échantillon reproductible. Spécification : [`docs/tasks/index-quality.md`](docs/tasks/index-quality.md).
+
+- **Échantillon** : 200 décisions de l'Autorité tirées par `md5(external_id)`, plus toutes celles sans texte intégral, toutes celles dont le numéro est partagé et toutes les décisions de Judilibre.
+- **Deux modes**, via l'alias `decisions`, dans le top 10 :
+  - `number` : recherche exacte sur le numéro, pour toutes les décisions de l'échantillon ;
+  - `title` : le titre de la décision comme texte de recherche, sur le titre pondéré (`--title-boost`, 2 par défaut, décimales acceptées) et le texte intégral ; décisions de l'Autorité seulement (Judilibre n'a pas de titre). La requête est celle de [`src/search/query.py`](src/search/query.py), que l'API de recherche reprendra.
+- **Métriques** : hit@1, hit@10 et MRR (moyenne de 1/rang, 0 hors du top 10), au total et par groupe : texte présent ou non, titre ambigu ou non, numéro ambigu ou non. Un titre est ambigu s'il appartient à plusieurs décisions de Silver (espaces autour ignorés, apostrophes `’` et `'` confondues comme à l'indexation) ; un numéro, s'il est partagé (casse ignorée, comme le normaliseur de l'index). Un groupe vide n'a pas de métriques (`NULL` en base, « - » dans le rapport).
+- **Stockage** : une ligne par mode et par poids du titre dans `search.findability_runs`, une ligne par décision cherchée (rang, `NULL` hors du top 10, et nombre de résultats) dans `search.findability_results`.
+- **Rapport** : métriques par mode, poids et groupe, puis les décisions absentes du top 10 par numéro et par titre, avec leur rang pour chaque poids.
+
+Le run est journalisé dans `bronze.collection_runs` (source `search-eval`). Il échoue si l'alias `decisions` est absent, ou s'il bascule vers un autre index pendant l'évaluation (les résultats mélangeraient deux index). Sinon, le script sort avec le code 0 : les seuils relèvent des contrôles qualité.
+
+**Poids du titre : 2.** Mesuré sur l'échantillon (runs 26 à 28) : le poids 1 donne une 1ʳᵉ position pour 93,8 % des décisions par titre, les poids 2 et 3 pour 96,3 %, avec des résultats identiques dans tous les groupes. À résultat égal, le plus petit poids est retenu : l'évaluation utilise le titre complet comme requête, ce qui favorise le titre, alors qu'une recherche réelle de quelques mots se trouvera souvent dans le texte. Les décisions perdant la 1ʳᵉ position sont toutes des décisions au titre ambigu (82 titres partagés par 183 décisions dans Silver) : les 223 décisions de l'échantillon au titre non ambigu sont toutes retrouvées en 1ʳᵉ position. Limite connue : cette évaluation mesure la capacité à retrouver une décision dont on connaît le titre, pas la pertinence de recherches libres.
+
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 
 - **Assistance conversationnelle (Claude)** : explications, discussions de conception, premières versions de code (dont les requêtes SQL des contrôles qualité) que je relis, teste sur les données réelles et adapte.
-- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)) et le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
+- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)), le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)), l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)) et l'évaluation de la trouvabilité ([PR #23](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/23)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
 
 **Ce qui reste de mon ressort :**
 - l'analyse de chaque source (documentation, `robots.txt`, structure des données) et les choix de conception qui en découlent ;
@@ -219,5 +257,6 @@ Documentation détaillée : [`docs/sources/autorite-concurrence.md`](docs/source
 - `decision_simplifiee` vaut `null` pour 28 décisions : 27 des 28 décisions `DEX` et la lettre du ministre. Une seule décision `DEX` a une valeur : ce n'est donc pas une règle stricte.
 - **30 décisions n'ont pas de texte intégral** (chaîne vide), et ne peuvent donc pas être retrouvées par une recherche dans leur contenu : 21 décisions de concentration, dont 8 datées de 2026, et des avis et décisions des années 1990 et 2000. Hypothèses à vérifier : une version publique pas encore publiée pour les concentrations récentes, des PDF numérisés sans texte extrait pour les documents anciens.
 - **La numérotation d'une année se prolonge sur les premiers mois de la suivante** (39 décisions, par exemple `00-D-68` à `00-D-92`, datées de janvier à mars 2001) : ce n'est pas une erreur. En revanche, **3 décisions ont une date impossible**, antérieure à l'année de leur numéro : `95-MC-06` (1990), `95-D-26` (1992) et `96-D-03` (1995).
+- **82 titres sont partagés par 183 décisions** (en confondant les apostrophes `'` et `’`) : une recherche par titre ne peut pas les distinguer. Les 5 paires de décisions publiées deux fois partagent à la fois leur numéro et leur titre.
 - Le `robots.txt` du site interdit toutes les URL avec paramètres, dont la pagination de la liste : l'historique vient donc de l'open data, et le scraper de fraîcheur ne visite que la première page de la liste (une seule requête par run).
 - Les URL de la liste correspondent exactement au champ `url_site` de l'open data : elles servent de clé de comparaison entre le site et le jeu de données (vérifié sur les 20 décisions de la première page, toutes présentes dans l'open data le 25/09/2026).

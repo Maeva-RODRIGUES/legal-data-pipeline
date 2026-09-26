@@ -37,18 +37,12 @@ def test_charge_un_controle_valide(tmp_path):
 
 
 def test_le_vrai_catalogue_se_charge():
+    """Sans figer la liste des contrôles : le catalogue évolue."""
     checks = load_checks()
-    assert [c.name for c in checks] == [
-        "bronze_rows_missing_from_silver",
-        "missing_decision_date",
-        "missing_decision_type_pct",
-        "empty_text",
-        "impossible_decision_date",
-        "duplicate_decision_number",
-        "number_year_mismatch",
-        "hours_since_last_success",
-        "site_decisions_missing_from_opendata",
-    ]
+    assert checks
+    names = [c.name for c in checks]
+    assert len(names) == len(set(names))
+    assert all(c.expect for c in checks)
 
 
 @pytest.mark.parametrize(
