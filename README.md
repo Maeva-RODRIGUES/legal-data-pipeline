@@ -8,7 +8,7 @@
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.19-005571?logo=elasticsearch&logoColor=white)
 ![Podman](https://img.shields.io/badge/Podman-Compose-892CA0?logo=podman&logoColor=white)
 ![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-scraping-4B8BBE?logo=python&logoColor=white)
-![pytest](https://img.shields.io/badge/pytest-268_tests-0A9EDC?logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-269_tests-0A9EDC?logo=pytest&logoColor=white)
 ![Ruff](https://img.shields.io/badge/Ruff-lint-D7FF64?logo=ruff&logoColor=black)
 ![pre-commit](https://img.shields.io/badge/pre--commit-enabled-FAB040?logo=precommit&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white)
@@ -35,7 +35,7 @@ flowchart LR
 - **6707 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 24 de Judilibre.
 - **12 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
 - **Un index Elasticsearch** reconstruit à chaque run, avec une évaluation de la trouvabilité : 100 % des décisions retrouvées par leur numéro, et 100 % des décisions au titre non ambigu retrouvées en 1ʳᵉ position par leur titre.
-- **268 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+- **269 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
 > **Pourquoi ne pas tout automatiser ?**
@@ -54,8 +54,10 @@ flowchart LR
   - jeu de données open data de l'Autorité de la concurrence (data.gouv.fr) ;
   - scraper du site de l'Autorité de la concurrence, pour détecter les décisions pas encore publiées en open data.
 - **Silver** : ramener les décisions de Judilibre et de l'open data à un schéma commun.
-- **Recherche** : indexer les décisions dans Elasticsearch et mesurer leur trouvabilité.
-- **Bonus** : planification avec Celery, API de recherche FastAPI.
+- **Qualité** : mesurer l'écart entre ce qui est collecté et ce qui est exploitable.
+- **Recherche** : indexer les décisions dans Elasticsearch, mesurer leur trouvabilité et les exposer par une API FastAPI.
+- **Orchestration** : planifier le pipeline avec Celery et Redis.
+- **Supervision** : suivre les runs et la qualité dans le temps avec Grafana.
 
 ## Avancement
 - [x] Étape 1a : collecteur Judilibre (pagination, reprises sur erreur, collecte incrémentale, journal des runs), testé sur données réelles ; idempotence vérifiée (relance d'un run : 0 nouveau, 14 inchangés)
@@ -65,8 +67,9 @@ flowchart LR
 - [x] Étape 1c : scraper de fraîcheur du site de l'Autorité de la concurrence (première page de la liste, contrôle des écarts avec l'open data), réalisé par délégation à un agent
 - [x] Étape 2 : couche Silver (schéma commun Judilibre et Autorité de la concurrence, reconstruction complète à chaque run, 6707 décisions, aucune anomalie), réalisée par délégation à un agent
 - [x] Étape 3 : contrôles qualité (9 contrôles sur 5 dimensions, résultats historisés, écarts connus distingués des nouveaux) ; catalogue de requêtes écrit par moi, moteur réalisé par délégation à un agent
-- [ ] Étape 4 : planification du pipeline avec Celery et Redis (Celery Beat)
-- [ ] Étape 5 : Elasticsearch et API de recherche FastAPI (en cours : index reconstruit avec bascule d'alias, et évaluation de la trouvabilité faits ; API FastAPI à venir)
+- [ ] Étape 4 : Elasticsearch et API de recherche FastAPI (en cours : index reconstruit avec bascule d'alias, et évaluation de la trouvabilité faits ; API FastAPI à venir)
+- [ ] Étape 5 : planification du pipeline avec Celery et Redis (Celery Beat)
+- [ ] Étape 6 : supervision du pipeline avec Grafana (runs, évolution des contrôles qualité, trouvabilité, volumes de l'index), tableaux de bord versionnés
 
 ## Lancer le projet
 ```bash
@@ -204,7 +207,7 @@ Le run est journalisé dans `bronze.collection_runs` (source `search-eval`). Il 
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 
 - **Assistance conversationnelle (Claude)** : explications, discussions de conception, premières versions de code (dont les requêtes SQL des contrôles qualité) que je relis, teste sur les données réelles et adapte.
-- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)), le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)), l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)) et l'évaluation de la trouvabilité ([PR #23](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/23)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
+- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)), le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)), l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)) et l'évaluation de la trouvabilité ([PR #28](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/28)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
 
 **Ce qui reste de mon ressort :**
 - l'analyse de chaque source (documentation, `robots.txt`, structure des données) et les choix de conception qui en découlent ;
