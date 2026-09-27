@@ -6,15 +6,16 @@
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.19-005571?logo=elasticsearch&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![Podman](https://img.shields.io/badge/Podman-Compose-892CA0?logo=podman&logoColor=white)
 ![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-scraping-4B8BBE?logo=python&logoColor=white)
-![pytest](https://img.shields.io/badge/pytest-269_tests-0A9EDC?logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-361_tests-0A9EDC?logo=pytest&logoColor=white)
 ![Ruff](https://img.shields.io/badge/Ruff-lint-D7FF64?logo=ruff&logoColor=black)
 ![pre-commit](https://img.shields.io/badge/pre--commit-enabled-FAB040?logo=precommit&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-agent-D97757?logo=anthropic&logoColor=white)
 
-Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration et contrôle qualité.
+Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration, contrôle qualité et recherche.
 
 ```mermaid
 flowchart LR
@@ -28,14 +29,18 @@ flowchart LR
     S -. lecture .-> Q
     F -. lecture .-> Q
     Q --> R[(quality.check_results)]
+    E --> A[API FastAPI]
+    S --> A
+    R --> A
 ```
 
 ## En bref
 - **3 sources** : l'API Judilibre, l'open data et le site de l'Autorité de la concurrence.
-- **6707 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 24 de Judilibre.
+- **6810 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 127 de Judilibre.
 - **12 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
 - **Un index Elasticsearch** reconstruit à chaque run, avec une évaluation de la trouvabilité : 100 % des décisions retrouvées par leur numéro, et 100 % des décisions au titre non ambigu retrouvées en 1ʳᵉ position par leur titre.
-- **269 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+- **Une API FastAPI** en lecture seule : recherche plein texte ou par numéro, détail d'une décision, suivi des runs et des contrôles qualité.
+- **361 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
 > **Pourquoi ne pas tout automatiser ?**
@@ -46,7 +51,8 @@ flowchart LR
 > - la valeur par défaut de `date_type` **changeait silencieusement** entre `/export` et `/scan` : sur une même période, seules 6 décisions étaient communes aux deux routes ;
 > - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté ;
 > - pour la couche Silver, **96 tests passaient, mais le premier run réel a révélé 6683 anomalies** : la spécification décrivait comme du texte des champs qui sont de vraies listes JSON. Vérifié avec `jsonb_typeof`, corrigé, et testé depuis sur de vraies décisions du Bronze ;
-> - pour les contrôles qualité, une première version du contrôle de cohérence entre numéro et date levait **42 alertes, dont 39 fausses** : en examinant les décisions une par une, j'ai identifié une règle de la source (la numérotation d'une année se prolonge sur les premiers mois de la suivante) et isolé **les 3 vraies incohérences**.
+> - pour les contrôles qualité, une première version du contrôle de cohérence entre numéro et date levait **42 alertes, dont 39 fausses** : en examinant les décisions une par une, j'ai identifié une règle de la source (la numérotation d'une année se prolonge sur les premiers mois de la suivante) et isolé **les 3 vraies incohérences** ;
+> - après la perte de la base lors d'une mise à jour de Podman, le pipeline s'est reconstruit à l'identique à partir des scripts, vérifié par les contrôles qualité ; la nouvelle collecte a révélé que **Judilibre publie des décisions avec plusieurs jours de retard**, sous une date de mise à jour passée : 16 décisions sur une fenêtre de deux jours le 23/09, 127 le 27/09.
 
 ## Objectif
 - **Bronze** : collecter des décisions de justice et d'autorités administratives, stockées brutes dans PostgreSQL :
@@ -65,10 +71,10 @@ flowchart LR
 - [x] Migration de `/export` (déprécié) vers `/scan`, avec `date_type` explicite
 - [x] Étape 1b : ingestion du jeu de données open data de l'Autorité de la concurrence (6683 décisions, lecture en flux d'un JSON de 210 Mo, idempotence vérifiée)
 - [x] Étape 1c : scraper de fraîcheur du site de l'Autorité de la concurrence (première page de la liste, contrôle des écarts avec l'open data), réalisé par délégation à un agent
-- [x] Étape 2 : couche Silver (schéma commun Judilibre et Autorité de la concurrence, reconstruction complète à chaque run, 6707 décisions, aucune anomalie), réalisée par délégation à un agent
-- [x] Étape 3 : contrôles qualité (9 contrôles sur 5 dimensions, résultats historisés, écarts connus distingués des nouveaux) ; catalogue de requêtes écrit par moi, moteur réalisé par délégation à un agent
-- [ ] Étape 4 : Elasticsearch et API de recherche FastAPI (en cours : index reconstruit avec bascule d'alias, et évaluation de la trouvabilité faits ; API FastAPI à venir)
-- [ ] Étape 5 : planification du pipeline avec Celery et Redis (Celery Beat)
+- [x] Étape 2 : couche Silver (schéma commun Judilibre et Autorité de la concurrence, reconstruction complète à chaque run, 6707 décisions au premier run, aucune anomalie), réalisée par délégation à un agent
+- [x] Étape 3 : contrôles qualité (9 contrôles sur 5 dimensions au départ, résultats historisés, écarts connus distingués des nouveaux) ; catalogue de requêtes écrit par moi, moteur réalisé par délégation à un agent
+- [x] Étape 4 : recherche (index Elasticsearch avec bascule d'alias, évaluation de la trouvabilité, API FastAPI en lecture seule) ; mapping, conception de l'évaluation, poids du titre et contrat de l'API décidés par moi, implémentation réalisée par délégation à un agent
+- [ ] Étape 5 : planification du pipeline avec Celery et Redis (Celery Beat), avec une fenêtre de recouvrement pour la collecte Judilibre
 - [ ] Étape 6 : supervision du pipeline avec Grafana (runs, évolution des contrôles qualité, trouvabilité, volumes de l'index), tableaux de bord versionnés
 
 ## Lancer le projet
@@ -83,8 +89,9 @@ python -m src.collector.adlc_opendata.run                 # fichier local : data
 python -m src.collector.adlc_opendata.run --url <URL>     # ou téléchargement préalable depuis data.gouv.fr
 python -m src.collector.adlc_scraper.run                  # contrôle de fraîcheur : décisions du site absentes de l'open data
 python -m src.silver.run                                  # reconstruction complète de silver.decisions depuis Bronze
-python -m src.quality.run                                 # contrôles qualité ; code de sortie 1 si un contrôle bloquant échoue
 python -m src.search.run                                  # reconstruction de l'index decisions ; code de sortie 1 si l'alias n'est pas basculé
+python -m src.search.evaluate                             # évaluation de la trouvabilité, résultats dans search.findability_*
+python -m src.quality.run                                 # contrôles qualité ; code de sortie 1 si un contrôle bloquant échoue
 uvicorn src.api.main:app                                  # API de recherche en lecture seule ; documentation : http://127.0.0.1:8000/docs
 ```
 
@@ -97,6 +104,16 @@ Get-Content sql\006_findability.sql | podman exec -i legal-data-pipeline-postgre
 ```
 
 Sous Windows, utiliser `127.0.0.1` plutôt que `localhost` dans `DATABASE_URL` et `ELASTICSEARCH_URL` : `localhost` est d'abord résolu en IPv6 (`::1`), et la connexion au conteneur peut alors prendre plus de deux minutes avant de se rabattre sur l'IPv4.
+
+Sous Windows avec Podman (machine WSL) :
+- prévoir au moins 4 Go de mémoire pour WSL (`memory` dans `%USERPROFILE%\.wslconfig`) : avec 2 Go, la machine Podman s'effondre au démarrage d'Elasticsearch ;
+- la mise à jour de Podman 5 vers 6 a remplacé la machine, et avec elle les volumes de données. Sauvegarder la base avant toute mise à jour ; le pipeline se reconstruit ensuite entièrement à partir des scripts (vérifié le 27/09/2026 : mêmes résultats aux contrôles qualité).
+
+Sauvegarder la base (le fichier reste dans `data/`, ignoré par Git) :
+```powershell
+podman exec legal-data-pipeline-postgres-1 pg_dump -U legal -d legal -Fc -f /tmp/legal.dump
+podman cp legal-data-pipeline-postgres-1:/tmp/legal.dump data\legal.dump
+```
 
 Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargés, jamais versionnés.
 
@@ -185,6 +202,8 @@ L'option `--checks <chemin>` permet de lancer un autre catalogue, par exemple un
 
 **Au 26/09/2026** : 12 contrôles, 24 résultats, tous `pass`, dont la complétude et la fraîcheur de l'index, et sa trouvabilité (100 % par numéro, 100 % en 1ʳᵉ position par titre hors titres ambigus).
 
+**Au 27/09/2026**, après la reconstruction complète du pipeline sur une base neuve : les mêmes 24 résultats, tous `pass`, avec exactement les mêmes écarts connus.
+
 ## Recherche
 Les décisions de Silver sont indexées dans Elasticsearch (service `elasticsearch` du `docker-compose.yml`, un seul nœud, sécurité désactivée : usage local uniquement). Le mapping, dans [`src/search/mapping.json`](src/search/mapping.json), est strict : un champ non déclaré fait rejeter le document.
 
@@ -201,14 +220,14 @@ Chaque run écrit dans `search.index_stats` une ligne par source (compte Silver,
 - **Échantillon** : 200 décisions de l'Autorité tirées par `md5(external_id)`, plus toutes celles sans texte intégral, toutes celles dont le numéro est partagé et toutes les décisions de Judilibre.
 - **Deux modes**, via l'alias `decisions`, dans le top 10 :
   - `number` : recherche exacte sur le numéro, pour toutes les décisions de l'échantillon ;
-  - `title` : le titre de la décision comme texte de recherche, sur le titre pondéré (`--title-boost`, 2 par défaut, décimales acceptées) et le texte intégral ; décisions de l'Autorité seulement (Judilibre n'a pas de titre). La requête est celle de [`src/search/query.py`](src/search/query.py), que l'API de recherche reprendra.
+  - `title` : le titre de la décision comme texte de recherche, sur le titre pondéré (`--title-boost`, 2 par défaut, décimales acceptées) et le texte intégral ; décisions de l'Autorité seulement (Judilibre n'a pas de titre). La requête est celle de [`src/search/query.py`](src/search/query.py), que l'API de recherche utilise.
 - **Métriques** : hit@1, hit@10 et MRR (moyenne de 1/rang, 0 hors du top 10), au total et par groupe : texte présent ou non, titre ambigu ou non, numéro ambigu ou non. Un titre est ambigu s'il appartient à plusieurs décisions de Silver (espaces autour ignorés, apostrophes `’` et `'` confondues comme à l'indexation) ; un numéro, s'il est partagé (casse ignorée, comme le normaliseur de l'index). Un groupe vide n'a pas de métriques (`NULL` en base, « - » dans le rapport).
 - **Stockage** : une ligne par mode et par poids du titre dans `search.findability_runs`, une ligne par décision cherchée (rang, `NULL` hors du top 10, et nombre de résultats) dans `search.findability_results`.
 - **Rapport** : métriques par mode, poids et groupe, puis les décisions absentes du top 10 par numéro et par titre, avec leur rang pour chaque poids.
 
 Le run est journalisé dans `bronze.collection_runs` (source `search-eval`). Il échoue si l'alias `decisions` est absent, ou s'il bascule vers un autre index pendant l'évaluation (les résultats mélangeraient deux index). Sinon, le script sort avec le code 0 : les seuils relèvent des contrôles qualité.
 
-**Poids du titre : 2.** Mesuré sur l'échantillon (runs 26 à 28) : le poids 1 donne une 1ʳᵉ position pour 93,8 % des décisions par titre, les poids 2 et 3 pour 96,3 %, avec des résultats identiques dans tous les groupes. À résultat égal, le plus petit poids est retenu : l'évaluation utilise le titre complet comme requête, ce qui favorise le titre, alors qu'une recherche réelle de quelques mots se trouvera souvent dans le texte. Les décisions perdant la 1ʳᵉ position sont toutes des décisions au titre ambigu (82 titres partagés par 183 décisions dans Silver) : les 223 décisions de l'échantillon au titre non ambigu sont toutes retrouvées en 1ʳᵉ position. Limite connue : cette évaluation mesure la capacité à retrouver une décision dont on connaît le titre, pas la pertinence de recherches libres.
+**Poids du titre : 2.** Mesuré sur l'échantillon (évaluation du 26/09/2026) : le poids 1 donne une 1ʳᵉ position pour 93,8 % des décisions par titre, les poids 2 et 3 pour 96,3 %, avec des résultats identiques dans tous les groupes. À résultat égal, le plus petit poids est retenu : l'évaluation utilise le titre complet comme requête, ce qui favorise le titre, alors qu'une recherche réelle de quelques mots se trouvera souvent dans le texte. Les décisions perdant la 1ʳᵉ position sont toutes des décisions au titre ambigu (82 titres partagés par 183 décisions dans Silver) : les 223 décisions de l'échantillon au titre non ambigu sont toutes retrouvées en 1ʳᵉ position. Limite connue : cette évaluation mesure la capacité à retrouver une décision dont on connaît le titre, pas la pertinence de recherches libres.
 
 ## API
 Une API FastAPI en lecture seule expose l'index, la couche Silver, les runs et les contrôles qualité. Elle lit `DATABASE_URL` et `ELASTICSEARCH_URL` (voir `.env.example`) et refuse de démarrer si l'une manque.
@@ -279,6 +298,7 @@ Spécification de référence : [`docs/api/`](docs/api/).
 - Certaines décisions ont un contenu différent selon qu'elles sont obtenues par `/export` ou par `/scan`, ou ont été mises à jour entre deux runs. La couche Bronze écrasant l'ancienne version, la différence ne peut pas être analysée : piste pour une Bronze en append-only (historique des versions).
 - Le contenu d'une décision peut changer **sans que sa date de mise à jour change** : observé le 24/09/2026 sur une décision datée du 15/09, dont le contenu renvoyé par `/scan` avait été modifié. Seule la comparaison des empreintes (hash du contenu complet) l'a détecté ; une détection fondée sur `update_date` l'aurait manqué.
 - Une décision peut sortir d'une fenêtre de collecte après coup, si elle est remise à jour : un run relancé sur une période passée ne renvoie pas toujours le même ensemble. La collecte incrémentale la récupère dans la fenêtre de sa nouvelle date de mise à jour.
+- **Des décisions apparaissent après coup avec une date de mise à jour passée** : la fenêtre des mises à jour du 15 au 16/09/2026 renvoyait 16 décisions le 23/09, et 127 le 27/09 (dont 122 mises à jour le 16/09, et 124 rendues en septembre 2026). Des décisions récentes deviennent donc visibles dans l'API plusieurs jours après la date de mise à jour qui leur est attribuée : une collecte incrémentale qui reprend strictement après le dernier run les manquerait, sans erreur. Piste : une fenêtre de recouvrement de plusieurs jours à chaque run, sans risque de doublons grâce aux empreintes (à mettre en place avec la planification Celery).
 
 ### Autorité de la concurrence (open data)
 Documentation détaillée : [`docs/sources/autorite-concurrence.md`](docs/sources/autorite-concurrence.md).
