@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![Podman](https://img.shields.io/badge/Podman-Compose-892CA0?logo=podman&logoColor=white)
 ![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-scraping-4B8BBE?logo=python&logoColor=white)
-![pytest](https://img.shields.io/badge/pytest-361_tests-0A9EDC?logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-362_tests-0A9EDC?logo=pytest&logoColor=white)
 ![Ruff](https://img.shields.io/badge/Ruff-lint-D7FF64?logo=ruff&logoColor=black)
 ![pre-commit](https://img.shields.io/badge/pre--commit-enabled-FAB040?logo=precommit&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white)
@@ -40,7 +40,7 @@ flowchart LR
 - **12 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
 - **Un index Elasticsearch** reconstruit à chaque run, avec une évaluation de la trouvabilité : 100 % des décisions retrouvées par leur numéro, et 100 % des décisions au titre non ambigu retrouvées en 1ʳᵉ position par leur titre.
 - **Une API FastAPI** en lecture seule : recherche plein texte ou par numéro, détail d'une décision, suivi des runs et des contrôles qualité.
-- **361 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+- **362 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
 > **Pourquoi ne pas tout automatiser ?**
