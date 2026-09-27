@@ -246,7 +246,7 @@ uvicorn src.api.main:app        # http://127.0.0.1:8000/docs : documentation int
 | `GET /health` | état de PostgreSQL et d'Elasticsearch (alias `decisions` compris) ; 503 si l'un est en panne |
 
 - **Filtres de recherche** (`source`, `decision_type`, `date_from`, `date_to`, `sector`, répétables sauf les dates) et **pagination** (`page`, `page_size` ≤ 50) sont ajoutés autour de la requête évaluée, sans la réécrire ni changer les scores.
-- **Titre d'affichage** : les décisions Judilibre n'ont pas de titre ; l'API construit une citation (`Cour de cassation, 29 juillet 2026, n° 26-83.146`), jamais stockée.
+- **Titre d'affichage** : les décisions Judilibre n'ont pas de titre ; l'API construit une citation (`Cour de cassation, 16 septembre 2026, n° 25-13.603`), jamais stockée.
 - **Erreurs** : un format unique, `{"error": {"code", "message", "details"}}` ; 422 pour un paramètre invalide, 404 pour une décision absente, 503 si Elasticsearch ou PostgreSQL ne répond pas (chaque route ne dépend que de son service).
 
 Contrat détaillé (paramètres, réponses, erreurs) : [`docs/tasks/search-api-contract.md`](docs/tasks/search-api-contract.md).
@@ -293,6 +293,7 @@ Spécification de référence : [`docs/api/`](docs/api/).
 - `type` vaut `other` pour toutes les décisions collectées : le type de décision reste vide en Silver plutôt que d'être deviné.
 - `summary` est souvent vide : il ne peut pas servir de titre.
 - L'URL publique d'une décision est `https://www.courdecassation.fr/decision/{id}` (vérifié le 25/09/2026).
+- Les textes sont **pseudonymisés** : noms et adresses des personnes physiques remplacés par des marqueurs (`M. [R] [T]`, `[Adresse 1]`) ; magistrats, avocats et personnes morales restent nommés.
 
 **Questions ouvertes :**
 - Certaines décisions ont un contenu différent selon qu'elles sont obtenues par `/export` ou par `/scan`, ou ont été mises à jour entre deux runs. La couche Bronze écrasant l'ancienne version, la différence ne peut pas être analysée : piste pour une Bronze en append-only (historique des versions).
