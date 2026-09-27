@@ -1,8 +1,20 @@
 import io
 import json
+from contextlib import contextmanager
 
-from src.collector.adlc_opendata import run
-from src.collector.adlc_opendata.ingest import external_id, iter_decisions
+import httpx
+import pytest
+
+from src.collector.adlc_opendata import ingest, run
+from src.collector.adlc_opendata.ingest import download, external_id, iter_decisions
+
+# URL stable de data.gouv.fr (ADLC_OPENDATA_URL) : 302 vers le fichier horodaté.
+STABLE_URL = "https://www.data.gouv.fr/api/1/datasets/r/be23f793-a37b-4613-8a80-c6b4116058fb"
+FILE_URL = (
+    "https://static.data.gouv.fr/resources/"
+    "decisions-publiees-par-lautorite-de-la-concurrence-depuis-1988/"
+    "20260927-100049/adlc-texte-complet-publications.json"
+)
 
 SAMPLE = [
     {
@@ -75,3 +87,45 @@ def test_main_lit_argv_et_non_sys_argv(monkeypatch, tmp_path):
         "https://example.fr/fr/avis/a",
         "https://example.fr/fr/avis/a-0",
     ]
+
+
+@pytest.fixture
+def data_gouv(monkeypatch):
+    """httpx.stream servi par un MockTransport, avec les options passées par download."""
+    requested = []
+    body = json.dumps(SAMPLE, ensure_ascii=False).encode("utf-8")
+
+    def handler(request):
+        requested.append(str(request.url))
+        if str(request.url) == STABLE_URL:
+            return httpx.Response(302, headers={"Location": FILE_URL})
+        if str(request.url) == FILE_URL:
+            return httpx.Response(200, content=body)
+        return httpx.Response(404)
+
+    @contextmanager
+    def stream(method, url, **kwargs):
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            with client.stream(method, url, **kwargs) as response:
+                yield response
+
+    monkeypatch.setattr(ingest.httpx, "stream", stream)
+    return requested, body
+
+
+def test_telechargement_suit_la_redirection_de_l_url_stable(data_gouv, tmp_path):
+    requested, body = data_gouv
+    dest = tmp_path / "raw" / "adlc.json"
+    assert download(STABLE_URL, dest) == dest
+    assert requested == [STABLE_URL, FILE_URL]
+    assert dest.read_bytes() == body
+    assert not dest.with_suffix(".json.part").exists()
+
+
+def test_redirection_vers_un_fichier_absent_echoue_sans_ecraser(data_gouv, tmp_path):
+    requested, _ = data_gouv
+    dest = tmp_path / "adlc.json"
+    dest.write_bytes(b"ancien fichier")
+    with pytest.raises(httpx.HTTPStatusError):
+        download("https://www.data.gouv.fr/api/1/datasets/r/absent", dest)
+    assert dest.read_bytes() == b"ancien fichier"
