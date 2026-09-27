@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import redis
@@ -9,8 +8,9 @@ LOCK_KEY = "legal-data-pipeline:pipeline-lock"
 LOCK_TTL = 6 * 3600  # secondes : libère le verrou d'un worker tombé en cours de run
 
 
-def redis_client() -> redis.Redis:
-    return redis.Redis.from_url(os.environ["CELERY_BROKER_URL"], decode_responses=True)
+def redis_client(url: str) -> redis.Redis:
+    """Même Redis que le broker Celery."""
+    return redis.Redis.from_url(url, decode_responses=True)
 
 
 class PipelineLock:
