@@ -104,6 +104,40 @@
   expect:
     default: {op: "==", value: 0}
 
+- name: findability_by_number
+  dimension: validity
+  severity: error
+  description: Share of sampled decisions found in the top 10 by their exact number (latest evaluation).
+  sql: |
+    SELECT 'search' AS source, hit_at_10 AS value
+    FROM search.findability_runs
+    WHERE mode = 'number'
+    ORDER BY run_id DESC
+    LIMIT 1;
+  expect:
+    search: {op: "==", value: 1}
+
+- name: findability_by_title_unambiguous
+  dimension: validity
+  severity: warning
+  description: >-
+    Share of sampled decisions with an unambiguous title found at rank 1 by their
+    title (latest evaluation, title weight 2). Ambiguous titles are excluded: the
+    source itself does not distinguish them.
+  sql: |
+    WITH last AS (
+      SELECT max(eval_id) AS eval_id
+      FROM search.findability_runs
+      WHERE mode = 'title' AND title_boost = 2
+    )
+    SELECT 'search' AS source,
+           round(avg(CASE WHEN rank = 1 THEN 1.0 ELSE 0 END), 4) AS value
+    FROM search.findability_results
+    WHERE eval_id = (SELECT eval_id FROM last)
+      AND NOT ambiguous_title;
+  expect:
+    search: {op: ">=", value: 0.98}
+
 # Uniqueness -----------------------------------------------------------------
 
 - name: duplicate_decision_number
