@@ -24,7 +24,8 @@ logger = get_task_logger(__name__)
 
 MAX_RETRIES = 3
 BACKOFF_SECONDS = 60
-SUNDAY = 6
+# L'open data est publiée le dimanche vers 10 h : ingestion la nuit suivante.
+OPENDATA_WEEKDAY = 0  # lundi
 
 Decision = Literal["retry", "continue", "fail"]
 
@@ -34,8 +35,8 @@ def paris_today() -> date:
 
 
 def includes_opendata(trigger: str, day: date, with_opendata: bool) -> bool:
-    """Le run nocturne du dimanche ingère l'open data ; un run manuel, sur demande seulement."""
-    return with_opendata or (trigger == NIGHTLY and day.weekday() == SUNDAY)
+    """Le run nocturne du lundi ingère l'open data ; un run manuel, sur demande seulement."""
+    return with_opendata or (trigger == NIGHTLY and day.weekday() == OPENDATA_WEEKDAY)
 
 
 def backoff(retries: int) -> int:

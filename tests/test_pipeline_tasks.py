@@ -11,8 +11,9 @@ from src.pipeline.lock import PipelineLock
 from src.pipeline.steps import STEPS, StepFailed, run_entry_point
 from tests.test_pipeline_lock import FakeRedis
 
-MONDAY = date(2026, 9, 28)
 SUNDAY = date(2026, 9, 27)
+MONDAY = date(2026, 9, 28)
+TUESDAY = date(2026, 9, 29)
 DAILY = ["judilibre", "adlc-scraper", "silver", "search", "search-eval", "quality"]
 REQUEST = httpx.Request("GET", "https://example.fr")
 REAL_BUILD_CHAIN = tasks.build_chain
@@ -35,7 +36,7 @@ class Pipeline:
         self.lock = PipelineLock(FakeRedis())
         self.outcomes = {}  # nom d'étape -> exception levée par le script
         self.executed = []
-        self.today = MONDAY
+        self.today = TUESDAY
         self.sent = []  # chaînes publiées sur le broker
 
     def start_run(self, trigger, day):
@@ -98,24 +99,26 @@ def test_chaine_dans_l_ordre_avec_la_fin_du_run_en_dernier():
 @pytest.mark.parametrize(
     ("trigger", "day", "with_opendata", "expected"),
     [
-        ("nightly", SUNDAY, False, True),
-        ("nightly", MONDAY, False, False),
-        ("manual", SUNDAY, False, False),
-        ("manual", MONDAY, True, True),
+        ("nightly", MONDAY, False, True),
+        # publiée le dimanche vers 10 h : pas encore disponible la nuit du dimanche
+        ("nightly", SUNDAY, False, False),
+        ("nightly", TUESDAY, False, False),
+        ("manual", MONDAY, False, False),
+        ("manual", TUESDAY, True, True),
     ],
 )
-def test_open_data_le_dimanche_ou_sur_demande(trigger, day, with_opendata, expected):
+def test_open_data_la_nuit_du_lundi_ou_sur_demande(trigger, day, with_opendata, expected):
     assert tasks.includes_opendata(trigger, day, with_opendata) is expected
 
 
-def test_run_nocturne_du_dimanche_commence_par_l_open_data(pipeline):
-    pipeline.today = SUNDAY
+def test_run_nocturne_du_lundi_commence_par_l_open_data(pipeline):
+    pipeline.today = MONDAY
     start(pipeline, "nightly")
     assert pipeline.executed == ["adlc-opendata", *DAILY]
 
 
 def test_run_manuel_sans_open_data_par_defaut(pipeline):
-    pipeline.today = SUNDAY
+    pipeline.today = MONDAY
     start(pipeline, "manual")
     assert pipeline.executed == DAILY
     assert pipeline.runs == {1: ("manual", "success", None)}
@@ -185,7 +188,7 @@ def test_echec_du_scraper_n_arrete_pas_la_chaine(pipeline):
 
 
 def test_open_data_et_scraper_en_echec_notes_dans_le_run(pipeline):
-    pipeline.today = SUNDAY
+    pipeline.today = MONDAY
     pipeline.outcomes["adlc-opendata"] = StepFailed("ADLC_OPENDATA_URL manquante")
     pipeline.outcomes["adlc-scraper"] = RuntimeError("HTTP 404")
     start(pipeline)

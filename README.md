@@ -271,10 +271,11 @@ Le pipeline complet tourne chaque nuit avec Celery et Redis, dans des conteneurs
 
 - **Services** du `docker-compose.yml` : `redis` (broker, aucun port publié sur l'hôte), `worker` (une étape à la fois, chacune dans un processus neuf) et `beat` (planificateur), construits à partir du `Dockerfile`. Dans Compose, les services se joignent par leur nom (`postgres:5432`, `elasticsearch:9200`, `redis:6379`) ; les scripts lancés depuis Windows gardent `127.0.0.1`. `JUDILIBRE_API_KEY` et `ADLC_OPENDATA_URL` viennent de `.env` ; `data/` est monté dans le worker.
 - **Horaire** : chaque nuit à **3 h 33, heure de Paris**. Le fuseau `Europe/Paris` est déclaré explicitement : l'horaire suit les changements d'heure, et 3 h 33 est hors de la plage 2 h-3 h où ils ont lieu.
+- **Open data, une fois par semaine, la nuit du lundi** : le fichier est publié le dimanche vers 10 h (horodatage `20260927-100049` dans son URL directe) ; la nuit du lundi récupère donc le plus récent.
 
 | | Étape | Script | Si elle échoue |
 |---|---|---|---|
-| 1 | `adlc-opendata`, **le dimanche seulement** | `src.collector.adlc_opendata.run --url $ADLC_OPENDATA_URL` | la chaîne continue |
+| 1 | `adlc-opendata`, **le lundi seulement** | `src.collector.adlc_opendata.run --url $ADLC_OPENDATA_URL` | la chaîne continue |
 | 2 | `judilibre` | `src.collector.judilibre.run` (fenêtre incrémentale, recouvrement de 14 jours) | la chaîne s'arrête |
 | 3 | `adlc-scraper` | `src.collector.adlc_scraper.run` | la chaîne continue |
 | 4 | `silver` | `src.silver.run` | la chaîne s'arrête |

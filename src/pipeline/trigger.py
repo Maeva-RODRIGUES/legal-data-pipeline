@@ -15,7 +15,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--with-opendata",
         action="store_true",
-        help="ingérer l'open data en tête de chaîne (sinon : seulement le dimanche, la nuit)",
+        help="ingérer l'open data en tête de chaîne (sinon : seulement la nuit du lundi)",
     )
     parser.add_argument(
         "--next-run",

@@ -21,7 +21,7 @@ class Step:
     takes_argv: bool  # main accepte-t-il argv ?
 
 
-# Ordre de la chaîne ; l'open data n'y figure que le dimanche ou sur demande.
+# Ordre de la chaîne ; l'open data n'y figure que la nuit du lundi ou sur demande.
 STEPS: dict[str, Step] = {
     step.name: step
     for step in (
