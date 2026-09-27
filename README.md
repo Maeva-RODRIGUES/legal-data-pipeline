@@ -95,6 +95,8 @@ python -m src.quality.run                                 # contrôles qualité 
 uvicorn src.api.main:app                                  # API de recherche en lecture seule ; documentation : http://127.0.0.1:8000/docs
 ```
 
+`compose up -d` démarre aussi le pipeline planifié : Redis, le worker Celery et Beat (voir [Planification](#planification)). Après une modification du code, reconstruire leur image avec `podman compose up -d --build`. Renseigner `ADLC_OPENDATA_URL` dans `.env` pour l'ingestion hebdomadaire de l'open data.
+
 Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer à la main les migrations Silver, qualité et recherche (PowerShell) :
 ```powershell
 Get-Content sql\003_silver.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
@@ -147,12 +149,20 @@ src/
 │   ├── query.py              # requêtes par numéro et par titre, partagées avec l'API
 │   ├── findability.py        # échantillon, ambiguïtés, rangs, métriques et rapport de l'évaluation
 │   └── evaluate.py           # évaluation de la findability, résultats dans search.findability_*
-└── api/
-    ├── main.py               # application FastAPI : routes, format unique des erreurs
-    ├── search.py             # corps de recherche autour de query.py (filtres, pagination, surlignage)
-    ├── backends.py           # Elasticsearch et PostgreSQL en lecture seule, indisponibilité en 503
-    ├── models.py             # modèles des réponses, repris dans la documentation /docs
-    └── display.py            # titre d'affichage des décisions sans titre (citation Judilibre)
+├── api/
+│   ├── main.py               # application FastAPI : routes, format unique des erreurs
+│   ├── search.py             # corps de recherche autour de query.py (filtres, pagination, surlignage)
+│   ├── backends.py           # Elasticsearch et PostgreSQL en lecture seule, indisponibilité en 503
+│   ├── models.py             # modèles des réponses, repris dans la documentation /docs
+│   └── display.py            # titre d'affichage des décisions sans titre (citation Judilibre)
+└── pipeline/
+    ├── app.py                # application Celery : broker Redis, fuseau Europe/Paris, un processus par étape
+    ├── schedule.py           # planification de Beat (03:33, heure de Paris) et prochaine exécution
+    ├── steps.py              # étapes (script, bloquante ou non, réseau ou non) et appel de leur point d'entrée
+    ├── tasks.py              # tâches : déclenchement, chaîne des étapes, retries, fin du run
+    ├── lock.py               # verrou Redis : un seul run du pipeline à la fois
+    ├── runlog.py             # journal des runs du pipeline dans bronze.collection_runs
+    └── trigger.py            # déclenchement manuel et affichage de la prochaine exécution
 sql/
 ├── 001_bronze.sql            # schéma bronze : documents bruts et journal des runs
 ├── 002_add_date_type.sql     # type de date filtré (update | creation) dans le journal des runs
@@ -167,6 +177,8 @@ docs/
 ├── api/                      # copie de référence de la spécification OpenAPI de Judilibre
 ├── sources/                  # analyse des sources (structure des données, écarts constatés)
 └── tasks/                    # spécifications des tâches déléguées à un agent
+Dockerfile                    # image du worker et de Beat : Python 3.12 slim, utilisateur non root
+.dockerignore                 # seuls requirements.txt et src/ entrent dans l'image (ni .env, ni data/)
 ```
 
 ## Couche Silver
@@ -253,6 +265,45 @@ uvicorn src.api.main:app        # http://127.0.0.1:8000/docs : documentation int
 - **Erreurs** : un format unique, `{"error": {"code", "message", "details"}}` ; 422 pour un paramètre invalide, 404 pour une décision absente, 503 si Elasticsearch ou PostgreSQL ne répond pas (chaque route ne dépend que de son service).
 
 Contrat détaillé (paramètres, réponses, erreurs) : [`docs/tasks/search-api-contract.md`](docs/tasks/search-api-contract.md).
+
+## Planification
+Le pipeline complet tourne chaque nuit avec Celery et Redis, dans des conteneurs (le worker Celery ne fonctionne pas sous Windows). Les scripts existants sont appelés tels quels. Spécification : [`docs/tasks/celery-pipeline.md`](docs/tasks/celery-pipeline.md).
+
+- **Services** du `docker-compose.yml` : `redis` (broker, aucun port publié sur l'hôte), `worker` (une étape à la fois, chacune dans un processus neuf) et `beat` (planificateur), construits à partir du `Dockerfile`. Dans Compose, les services se joignent par leur nom (`postgres:5432`, `elasticsearch:9200`, `redis:6379`) ; les scripts lancés depuis Windows gardent `127.0.0.1`. `JUDILIBRE_API_KEY` et `ADLC_OPENDATA_URL` viennent de `.env` ; `data/` est monté dans le worker.
+- **Horaire** : chaque nuit à **3 h 33, heure de Paris**. Le fuseau `Europe/Paris` est déclaré explicitement : l'horaire suit les changements d'heure, et 3 h 33 est hors de la plage 2 h-3 h où ils ont lieu.
+
+| | Étape | Script | Si elle échoue |
+|---|---|---|---|
+| 1 | `adlc-opendata`, **le dimanche seulement** | `src.collector.adlc_opendata.run --url $ADLC_OPENDATA_URL` | la chaîne continue |
+| 2 | `judilibre` | `src.collector.judilibre.run` (fenêtre incrémentale, recouvrement de 14 jours) | la chaîne s'arrête |
+| 3 | `adlc-scraper` | `src.collector.adlc_scraper.run` | la chaîne continue |
+| 4 | `silver` | `src.silver.run` | la chaîne s'arrête |
+| 5 | `search` | `src.search.run` | la chaîne s'arrête |
+| 6 | `search-eval` | `src.search.evaluate` | la chaîne s'arrête |
+| 7 | `quality` | `src.quality.run` | la chaîne s'arrête |
+
+Règles :
+- **Échec d'une étape** : une exception ou un code de sortie non nul. Un index dont l'alias n'est pas basculé (`search`) ou un verdict qualité en échec (`quality`) font donc échouer le run du pipeline.
+- **Étape bloquante en échec** : la chaîne s'arrête, et le run du pipeline passe en `failed`, avec le nom de l'étape dans `error`.
+- **Étape non bloquante en échec** (open data, scraper) : la chaîne continue et le run du pipeline finit en `success`, **avec une note dans `error`** : `non-blocking step failed: adlc-scraper` (plusieurs étapes : `non-blocking steps failed: adlc-opendata, adlc-scraper`). Un échec qui dure est signalé par le contrôle de fraîcheur `hours_since_last_success` (168 h).
+- **Open data** : sans `ADLC_OPENDATA_URL`, l'étape échoue avec un message explicite ; le fichier local n'est jamais réingéré en silence.
+- **Retries** : seulement pour les étapes réseau (open data, Judilibre, scraper), sur une erreur de connexion ou un délai dépassé : 3 au plus, après 60, 120 puis 240 secondes, en plus des 5 tentatives des clients HTTP. Aucun retry pour Silver, l'index, l'évaluation et la qualité : un échec s'y examine, il ne se répète pas. Chaque tentative d'un collecteur a son propre run.
+- **Verrou** : un verrou Redis empêche deux runs simultanés. Un run déclenché pendant un autre est journalisé en `skipped` (`error` : `lock held by pipeline run <id>`) et rien n'est exécuté. Le worker ne traitant qu'une tâche à la fois, ce déclenchement est examiné à la fin de l'étape en cours.
+- **Worker arrêté en cours de run** : l'étape interrompue n'est pas rejouée, le run du pipeline reste `running`, et le verrou expire au bout de 6 heures.
+
+Déclenchement manuel, depuis Windows (Redis n'étant pas exposé, la commande s'exécute dans le worker) :
+```powershell
+podman exec legal-data-pipeline-worker-1 python -m src.pipeline.trigger                  # chaîne complète, sans l'open data
+podman exec legal-data-pipeline-worker-1 python -m src.pipeline.trigger --with-opendata  # avec l'open data en tête
+podman exec legal-data-pipeline-worker-1 python -m src.pipeline.trigger --next-run       # prochaine exécution planifiée
+podman logs -f legal-data-pipeline-worker-1                                               # suivre le run
+```
+
+Chaque run du pipeline est journalisé dans `bronze.collection_runs` : source `pipeline`, `date_type` `nightly` ou `manual`, statut `success`, `failed` ou `skipped`. Chaque étape y garde aussi son propre run. Les derniers runs du pipeline :
+```powershell
+podman exec legal-data-pipeline-postgres-1 psql -U legal -d legal -P pager=off -c "SELECT run_id, date_type, status, error, started_at, finished_at FROM bronze.collection_runs WHERE source = 'pipeline' ORDER BY run_id DESC LIMIT 10"
+```
+L'API les expose aussi : `GET /runs?source=pipeline` (filtre `status=skipped` accepté).
 
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
