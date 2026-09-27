@@ -10,8 +10,9 @@ from src.api.backends import (
     SearchIndexUnavailable,
 )
 from src.api.main import app, get_database, get_search
-from src.api.models import CheckStatus, DecisionType, Source
+from src.api.models import CheckStatus, DecisionType, RunStatus, Source
 from src.api.search import HIGHLIGHT
+from src.pipeline.runlog import SKIPPED
 from src.quality.run import STATUS_ORDER
 from src.search.query import DEFAULT_TITLE_BOOST, number_query, title_query
 from src.silver import adlc_opendata, judilibre
@@ -179,6 +180,7 @@ def test_vocabulaires_alignes_sur_silver_et_la_qualite():
     assert set(Source.__args__) == {judilibre.SOURCE, adlc_opendata.SOURCE}
     assert set(DecisionType.__args__) == set(adlc_opendata.MAIN_TYPES.values())
     assert set(CheckStatus.__args__) == set(STATUS_ORDER)
+    assert SKIPPED in RunStatus.__args__
 
 
 # /search ------------------------------------------------------------------------
@@ -416,6 +418,13 @@ def test_runs_filtres(client):
     params = [("source", "search"), ("source", "quality"), ("status", "failed"), ("limit", "5")]
     assert client.get("/runs", params=params).json() == {"runs": []}
     assert database.calls == [("runs", ["search", "quality"], "failed", 5)]
+
+
+def test_runs_ignores_par_le_verrou_du_pipeline(client):
+    use(database=(database := FakeDatabase()))
+    params = {"source": "pipeline", "status": SKIPPED}
+    assert client.get("/runs", params=params).json() == {"runs": []}
+    assert database.calls == [("runs", ["pipeline"], "skipped", 20)]
 
 
 @pytest.mark.parametrize(
