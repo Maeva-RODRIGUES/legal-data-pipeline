@@ -117,7 +117,7 @@ podman cp legal-data-pipeline-postgres-1:/tmp/legal.dump data\legal.dump
 
 Le dossier `data/` est ignoré par Git : les fichiers sources sont téléchargés, jamais versionnés.
 
-Options du collecteur Judilibre : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100). Sans `--start`, la collecte reprend après le dernier run réussi du même type de date.
+Options du collecteur Judilibre : `--date-type update|creation` (défaut : `update`), `--batch-size` (défaut : 100), `--lookback-days N` (défaut : 14, ignoré avec `--start`). Sans `--start`, la collecte reprend N jours avant la fin du dernier run réussi du même type de date (avec `--lookback-days 0`, juste après), car des décisions apparaissent après coup avec une date de mise à jour passée (voir [Pièges des sources › Judilibre › Questions ouvertes](#judilibre-api-piste)) ; les décisions déjà connues sont comptées comme inchangées grâce aux empreintes.
 
 ## Structure du projet
 ```text
