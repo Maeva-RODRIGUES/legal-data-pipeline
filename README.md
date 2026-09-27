@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![Podman](https://img.shields.io/badge/Podman-Compose-892CA0?logo=podman&logoColor=white)
 ![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-scraping-4B8BBE?logo=python&logoColor=white)
-![pytest](https://img.shields.io/badge/pytest-362_tests-0A9EDC?logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-370_tests-0A9EDC?logo=pytest&logoColor=white)
 ![Ruff](https://img.shields.io/badge/Ruff-lint-D7FF64?logo=ruff&logoColor=black)
 ![pre-commit](https://img.shields.io/badge/pre--commit-enabled-FAB040?logo=precommit&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white)
@@ -36,11 +36,11 @@ flowchart LR
 
 ## En bref
 - **3 sources** : l'API Judilibre, l'open data et le site de l'Autorité de la concurrence.
-- **6810 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 127 de Judilibre.
-- **12 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
+- **8151 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 1468 de Judilibre.
+- **13 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
 - **Un index Elasticsearch** reconstruit à chaque run, avec une évaluation de la trouvabilité : 100 % des décisions retrouvées par leur numéro, et 100 % des décisions au titre non ambigu retrouvées en 1ʳᵉ position par leur titre.
 - **Une API FastAPI** en lecture seule : recherche plein texte ou par numéro, détail d'une décision, suivi des runs et des contrôles qualité.
-- **362 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+- **370 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
 > **Pourquoi ne pas tout automatiser ?**
@@ -74,7 +74,7 @@ flowchart LR
 - [x] Étape 2 : couche Silver (schéma commun Judilibre et Autorité de la concurrence, reconstruction complète à chaque run, 6707 décisions au premier run, aucune anomalie), réalisée par délégation à un agent
 - [x] Étape 3 : contrôles qualité (9 contrôles sur 5 dimensions au départ, résultats historisés, écarts connus distingués des nouveaux) ; catalogue de requêtes écrit par moi, moteur réalisé par délégation à un agent
 - [x] Étape 4 : recherche (index Elasticsearch avec bascule d'alias, évaluation de la trouvabilité, API FastAPI en lecture seule) ; mapping, conception de l'évaluation, poids du titre et contrat de l'API décidés par moi, implémentation réalisée par délégation à un agent
-- [ ] Étape 5 : planification du pipeline avec Celery et Redis (Celery Beat), avec une fenêtre de recouvrement pour la collecte Judilibre
+- [ ] Étape 5 : planification du pipeline avec Celery et Redis (Celery Beat), chaque nuit à 3 h 33 ; la fenêtre de recouvrement de la collecte Judilibre est déjà en place
 - [ ] Étape 6 : supervision du pipeline avec Grafana (runs, évolution des contrôles qualité, trouvabilité, volumes de l'index), tableaux de bord versionnés
 
 ## Lancer le projet
@@ -204,6 +204,8 @@ L'option `--checks <chemin>` permet de lancer un autre catalogue, par exemple un
 
 **Au 27/09/2026**, après la reconstruction complète du pipeline sur une base neuve : les mêmes 24 résultats, tous `pass`, avec exactement les mêmes écarts connus.
 
+Depuis, `duplicate_decision_number` ne porte plus que sur l'Autorité, et `duplicate_ecli` contrôle l'unicité des décisions Judilibre : un numéro de pourvoi identifie une affaire, pas une décision (13 contrôles, 24 résultats, tous `pass`).
+
 ## Recherche
 Les décisions de Silver sont indexées dans Elasticsearch (service `elasticsearch` du `docker-compose.yml`, un seul nœud, sécurité désactivée : usage local uniquement). Le mapping, dans [`src/search/mapping.json`](src/search/mapping.json), est strict : un champ non déclaré fait rejeter le document.
 
@@ -295,12 +297,13 @@ Spécification de référence : [`docs/api/`](docs/api/).
 - `summary` est souvent vide : il ne peut pas servir de titre.
 - L'URL publique d'une décision est `https://www.courdecassation.fr/decision/{id}` (vérifié le 25/09/2026).
 - Les textes sont **pseudonymisés** : noms et adresses des personnes physiques remplacés par des marqueurs (`M. [R] [T]`, `[Adresse 1]`) ; magistrats, avocats et personnes morales restent nommés.
+- **Un numéro de pourvoi n'identifie pas une décision** : une même affaire peut produire plusieurs décisions, par exemple une décision sur une QPC et l'arrêt sur le fond le même jour, ou un renvoi puis un arrêt de chambre mixte (5 cas sur 1468 décisions le 27/09/2026). L'identifiant d'une décision est l'ECLI ; les contrôles d'unicité portent donc sur l'ECLI pour Judilibre.
 
 **Questions ouvertes :**
 - Certaines décisions ont un contenu différent selon qu'elles sont obtenues par `/export` ou par `/scan`, ou ont été mises à jour entre deux runs. La couche Bronze écrasant l'ancienne version, la différence ne peut pas être analysée : piste pour une Bronze en append-only (historique des versions).
 - Le contenu d'une décision peut changer **sans que sa date de mise à jour change** : observé le 24/09/2026 sur une décision datée du 15/09, dont le contenu renvoyé par `/scan` avait été modifié. Seule la comparaison des empreintes (hash du contenu complet) l'a détecté ; une détection fondée sur `update_date` l'aurait manqué.
 - Une décision peut sortir d'une fenêtre de collecte après coup, si elle est remise à jour : un run relancé sur une période passée ne renvoie pas toujours le même ensemble. La collecte incrémentale la récupère dans la fenêtre de sa nouvelle date de mise à jour.
-- **Des décisions apparaissent après coup avec une date de mise à jour passée** : la fenêtre des mises à jour du 15 au 16/09/2026 renvoyait 16 décisions le 23/09, et 127 le 27/09 (dont 122 mises à jour le 16/09, et 124 rendues en septembre 2026). Des décisions récentes deviennent donc visibles dans l'API plusieurs jours après la date de mise à jour qui leur est attribuée : une collecte incrémentale qui reprend strictement après le dernier run les manquerait, sans erreur. Piste : une fenêtre de recouvrement de plusieurs jours à chaque run, sans risque de doublons grâce aux empreintes (à mettre en place avec la planification Celery).
+- **Des décisions apparaissent après coup avec une date de mise à jour passée** : la fenêtre des mises à jour du 15 au 16/09/2026 renvoyait 16 décisions le 23/09, et 127 le 27/09 (dont 122 mises à jour le 16/09, et 124 rendues en septembre 2026). Des décisions récentes deviennent donc visibles dans l'API plusieurs jours après la date de mise à jour qui leur est attribuée : une collecte incrémentale qui reprend strictement après le dernier run les manquerait, sans erreur. Mis en place : le collecteur reprend 14 jours avant la fin du dernier run (`--lookback-days`) ; un double run le 27/09/2026 a relu 1031 décisions sans aucun doublon.
 
 ### Autorité de la concurrence (open data)
 Documentation détaillée : [`docs/sources/autorite-concurrence.md`](docs/sources/autorite-concurrence.md).
