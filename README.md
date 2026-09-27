@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![Podman](https://img.shields.io/badge/Podman-Compose-892CA0?logo=podman&logoColor=white)
 ![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-scraping-4B8BBE?logo=python&logoColor=white)
-![pytest](https://img.shields.io/badge/pytest-361_tests-0A9EDC?logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-362_tests-0A9EDC?logo=pytest&logoColor=white)
 ![Ruff](https://img.shields.io/badge/Ruff-lint-D7FF64?logo=ruff&logoColor=black)
 ![pre-commit](https://img.shields.io/badge/pre--commit-enabled-FAB040?logo=precommit&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white)
@@ -40,7 +40,7 @@ flowchart LR
 - **12 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
 - **Un index Elasticsearch** reconstruit à chaque run, avec une évaluation de la trouvabilité : 100 % des décisions retrouvées par leur numéro, et 100 % des décisions au titre non ambigu retrouvées en 1ʳᵉ position par leur titre.
 - **Une API FastAPI** en lecture seule : recherche plein texte ou par numéro, détail d'une décision, suivi des runs et des contrôles qualité.
-- **361 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+- **362 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
 > **Pourquoi ne pas tout automatiser ?**
@@ -238,6 +238,7 @@ uvicorn src.api.main:app        # http://127.0.0.1:8000/docs : documentation int
 
 | Route | Rôle |
 |---|---|
+| `GET /` | redirige vers `/docs` (hors documentation OpenAPI) |
 | `GET /search?q=...` | recherche plein texte : la requête évaluée de [`src/search/query.py`](src/search/query.py) (titre pondéré 2, texte intégral), extraits surlignés |
 | `GET /search?number=...` | recherche par numéro exact (casse et accents ignorés), exclusive de `q`, sans surlignage |
 | `GET /decisions/{source}?id=...` | détail d'une décision, lu dans `silver.decisions` ; `detail_path` de chaque résultat de recherche |
@@ -255,7 +256,7 @@ Contrat détaillé (paramètres, réponses, erreurs) : [`docs/tasks/search-api-c
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 
 - **Assistance conversationnelle (Claude)** : explications, discussions de conception, premières versions de code (dont les requêtes SQL des contrôles qualité) que je relis, teste sur les données réelles et adapte.
-- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)), le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)), l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)) et l'évaluation de la trouvabilité ([PR #28](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/28)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
+- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)), le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)), l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)), l'évaluation de la trouvabilité ([PR #28](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/28)) et l'API de recherche ([PR #30](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/30)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
 
 **Ce qui reste de mon ressort :**
 - l'analyse de chaque source (documentation, `robots.txt`, structure des données) et les choix de conception qui en découlent ;

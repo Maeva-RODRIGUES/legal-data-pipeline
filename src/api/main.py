@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .backends import (
@@ -156,6 +156,11 @@ def clean(value: str | None, name: str, max_length: int) -> str | None:
     if len(value) > max_length:
         raise invalid(f"{name} must be at most {max_length} characters", name)
     return value
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    return RedirectResponse("/docs")
 
 
 @app.get(
