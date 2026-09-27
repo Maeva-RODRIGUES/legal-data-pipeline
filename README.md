@@ -238,6 +238,7 @@ uvicorn src.api.main:app        # http://127.0.0.1:8000/docs : documentation int
 
 | Route | Rôle |
 |---|---|
+| `GET /` | redirige vers `/docs` (hors documentation OpenAPI) |
 | `GET /search?q=...` | recherche plein texte : la requête évaluée de [`src/search/query.py`](src/search/query.py) (titre pondéré 2, texte intégral), extraits surlignés |
 | `GET /search?number=...` | recherche par numéro exact (casse et accents ignorés), exclusive de `q`, sans surlignage |
 | `GET /decisions/{source}?id=...` | détail d'une décision, lu dans `silver.decisions` ; `detail_path` de chaque résultat de recherche |

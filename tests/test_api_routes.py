@@ -502,6 +502,13 @@ def test_sante_elasticsearch_sans_alias(client):
 # Divers -------------------------------------------------------------------------
 
 
+def test_racine_redirige_vers_la_documentation():
+    client = TestClient(app)  # sans fakes ni lifespan : ni base ni Elasticsearch
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/docs"
+
+
 def test_route_inconnue(client):
     assert_error(client.get("/inconnue"), 404, "not_found")
 
