@@ -1,0 +1,5 @@
+# Seuls requirements.txt et src/ entrent dans l'image : ni clé d'API, ni données.
+*
+!requirements.txt
+!src/
+**/__pycache__/
