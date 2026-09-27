@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from .ingest import SOURCE, download, external_id, iter_decisions
 DEFAULT_FILE = Path("data/raw/adlc-texte-complet-publications.json")
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Open data ADLC -> Bronze")
     parser.add_argument("--file", type=Path, default=DEFAULT_FILE, help="fichier JSON local")
@@ -22,7 +23,7 @@ def main() -> None:
         "--url",
         help="URL de la ressource data.gouv.fr à télécharger avant l'ingestion",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.url:
         print(f"Téléchargement de {args.url}…")
