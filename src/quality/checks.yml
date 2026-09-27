@@ -144,22 +144,39 @@
   dimension: uniqueness
   severity: warning
   description: >-
-    Decision numbers used by more than one Silver row, per source.
-    5 known for the Autorité (e.g. 17-A-05).
+    Decision numbers used by more than one Silver row, for the Autorité
+    (5 known, e.g. 17-A-05, published twice). Not applied to Judilibre: a
+    pourvoi number identifies a case, which can produce several decisions
+    (e.g. a QPC and the merits, the same day); see duplicate_ecli.
   sql: |
-    SELECT s.source, count(d.decision_number) AS value
-    FROM (SELECT DISTINCT source FROM silver.decisions) s
-    LEFT JOIN (
-      SELECT source, decision_number
+    SELECT 'adlc-opendata' AS source, count(*) AS value
+    FROM (
+      SELECT decision_number
       FROM silver.decisions
-      WHERE decision_number IS NOT NULL
-      GROUP BY source, decision_number
+      WHERE source = 'adlc-opendata' AND decision_number IS NOT NULL
+      GROUP BY decision_number
       HAVING count(*) > 1
-    ) d ON d.source = s.source
-    GROUP BY s.source;
+    ) d;
   expect:
-    default: {op: "==", value: 0}
     adlc-opendata: {op: "<=", value: 5}
+
+- name: duplicate_ecli
+  dimension: uniqueness
+  severity: warning
+  description: >-
+    ECLI identifiers used by more than one Judilibre decision in Silver. The ECLI
+    identifies a single decision, unlike the pourvoi number.
+  sql: |
+    SELECT 'judilibre' AS source, count(*) AS value
+    FROM (
+      SELECT attributes->>'ecli'
+      FROM silver.decisions
+      WHERE source = 'judilibre' AND attributes->>'ecli' IS NOT NULL
+      GROUP BY 1
+      HAVING count(*) > 1
+    ) d;
+  expect:
+    judilibre: {op: "==", value: 0}
 
 # Consistency ----------------------------------------------------------------
 

@@ -12,19 +12,49 @@ from .client import JudilibreClient
 
 SOURCE = "judilibre"
 DEFAULT_WINDOW_DAYS = 7
+DEFAULT_LOOKBACK_DAYS = 14
+
+
+def compute_window(
+    last_end: date | None,
+    today: date,
+    lookback_days: int,
+    start: date | None = None,
+    end: date | None = None,
+) -> tuple[date, date]:
+    """Collection window. Without an explicit start, resume lookback_days before the last end.
+
+    The returned start may be after the end: there is then nothing to collect.
+    """
+    if lookback_days < 0:
+        raise ValueError(f"lookback_days doit être positif ou nul (reçu : {lookback_days})")
+    end = end or today
+    if start:
+        return start, end
+    if last_end is None:
+        return end - timedelta(days=DEFAULT_WINDOW_DAYS), end
+    return last_end + timedelta(days=1) - timedelta(days=lookback_days), end
 
 
 def resolve_dates(args: argparse.Namespace, store: BronzeStore) -> tuple[date, date]:
-    end = date.fromisoformat(args.end) if args.end else date.today()
-    if args.start:
-        return date.fromisoformat(args.start), end
-    last_end = store.last_successful_end(SOURCE, args.date_type)
-    start = last_end + timedelta(days=1) if last_end else end - timedelta(days=DEFAULT_WINDOW_DAYS)
-    return start, end
+    start = date.fromisoformat(args.start) if args.start else None
+    end = date.fromisoformat(args.end) if args.end else None
+    last_end = None if start else store.last_successful_end(SOURCE, args.date_type)
+    lookback = DEFAULT_LOOKBACK_DAYS if args.lookback_days is None else args.lookback_days
+    return compute_window(last_end, date.today(), lookback, start, end)
 
 
-def main() -> None:
-    load_dotenv()
+def non_negative_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"entier attendu, reçu : {value!r}") from None
+    if number < 0:
+        raise argparse.ArgumentTypeError(f"doit être positif ou nul, reçu : {number}")
+    return number
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Collecte Judilibre -> Bronze")
     parser.add_argument("--start", help="date de début AAAA-MM-JJ (sinon : incrémental)")
     parser.add_argument("--end", help="date de fin AAAA-MM-JJ (défaut : aujourd'hui)")
@@ -37,7 +67,23 @@ def main() -> None:
             "date filtrée par l'API (défaut : update, pour ne pas rater les publications tardives)"
         ),
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--lookback-days",
+        type=non_negative_int,
+        default=None,
+        help=(
+            "sans --start, reprendre N jours avant la fin du dernier run réussi "
+            f"(défaut : {DEFAULT_LOOKBACK_DAYS}, ignoré avec --start)"
+        ),
+    )
+    return parser
+
+
+def main() -> None:
+    load_dotenv()
+    args = build_parser().parse_args()
+    if args.start and args.lookback_days is not None:
+        print("--lookback-days ignoré : --start est fourni.")
 
     store = BronzeStore(os.environ["DATABASE_URL"])
     start, end = resolve_dates(args, store)
