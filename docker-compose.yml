@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: legal
       POSTGRES_PASSWORD: legal
       POSTGRES_DB: legal
-      # mot de passe du rôle grafana_reader, fixé par sql/007_grafana_reader_password.sh
+      # mot de passe du rôle grafana_reader, fixé par sql/008_grafana_reader_password.sh
       GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD manquant dans .env}
     ports:
       - "127.0.0.1:5432:5432"

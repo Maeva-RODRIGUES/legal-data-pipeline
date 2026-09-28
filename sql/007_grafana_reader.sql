@@ -1,5 +1,5 @@
 -- Read-only role for Grafana: SELECT on the tables of the dashboards, nothing else.
--- No password here: it is set from GRAFANA_DB_PASSWORD by 007_grafana_reader_password.sh.
+-- No password here: it is set from GRAFANA_DB_PASSWORD by 008_grafana_reader_password.sh.
 -- Without a password the role cannot log in.
 DO $$
 BEGIN

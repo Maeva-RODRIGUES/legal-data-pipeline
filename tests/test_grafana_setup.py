@@ -5,7 +5,7 @@ import yaml
 
 ROOT = Path(__file__).parent.parent
 MIGRATION = ROOT / "sql" / "007_grafana_reader.sql"
-PASSWORD_SCRIPT = ROOT / "sql" / "007_grafana_reader_password.sh"
+PASSWORD_SCRIPT = ROOT / "sql" / "008_grafana_reader_password.sh"
 ENV_EXAMPLE = ROOT / ".env.example"
 COMPOSE = ROOT / "docker-compose.yml"
 DATASOURCES = ROOT / "grafana" / "provisioning" / "datasources" / "postgres.yml"
@@ -79,6 +79,25 @@ def test_password_script_reads_env_and_uses_psql_variable():
     assert "PASSWORD :'pw'" in script
     # Sourcé par l'entrypoint : un exit arrêterait l'initialisation de la base.
     assert not re.search(r"^\s*exit\b", script, re.M)
+
+
+def test_password_script_runs_after_role_migration():
+    # L'entrypoint de postgres n'ordonne pas « 007_x.sql » avant « 007_x_y.sh » :
+    # constaté sur un volume neuf. Un préfixe numérique plus grand le garantit.
+    assert PASSWORD_SCRIPT.name.split("_")[0] > MIGRATION.name.split("_")[0]
+
+
+def test_password_script_keeps_password_out_of_server_logs():
+    script = read(PASSWORD_SCRIPT)
+    set_logging = script.index("SET log_min_error_statement = panic;")
+    assert set_logging < script.index("ALTER ROLE grafana_reader PASSWORD")
+    assert "rolname = 'grafana_reader'" in script  # rôle vérifié avant l'ALTER ROLE
+
+
+def test_password_script_fails_on_error():
+    script = read(PASSWORD_SCRIPT)
+    assert "ON_ERROR_STOP=1" in script
+    assert script.count("false") == 3  # variable vide, rôle absent, échec de psql
 
 
 def test_password_script_has_lf_line_endings():
