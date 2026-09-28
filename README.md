@@ -8,15 +8,16 @@
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.19-005571?logo=elasticsearch&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![Celery](https://img.shields.io/badge/Celery-Redis-37814A?logo=celery&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-dashboards-F46800?logo=grafana&logoColor=white)
 ![Podman](https://img.shields.io/badge/Podman-Compose-892CA0?logo=podman&logoColor=white)
 ![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-scraping-4B8BBE?logo=python&logoColor=white)
-![pytest](https://img.shields.io/badge/pytest-441_tests-0A9EDC?logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-491_tests-0A9EDC?logo=pytest&logoColor=white)
 ![Ruff](https://img.shields.io/badge/Ruff-lint-D7FF64?logo=ruff&logoColor=black)
 ![pre-commit](https://img.shields.io/badge/pre--commit-enabled-FAB040?logo=precommit&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-agent-D97757?logo=anthropic&logoColor=white)
 
-Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration, contrôle qualité, recherche et planification.
+Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration, contrôle qualité, recherche, planification et supervision.
 
 ```mermaid
 flowchart LR
@@ -34,6 +35,9 @@ flowchart LR
     E --> A[API FastAPI]
     S --> A
     R --> A
+    R -. lecture .-> G[Grafana]
+    B -. lecture .-> G
+    F -. lecture .-> G
 ```
 
 ## En bref
@@ -43,7 +47,8 @@ flowchart LR
 - **Un index Elasticsearch** reconstruit à chaque run, avec une évaluation de la trouvabilité : 100 % des décisions retrouvées par leur numéro, et 100 % des décisions au titre non ambigu retrouvées en 1ʳᵉ position par leur titre.
 - **Une API FastAPI** en lecture seule : recherche plein texte ou par numéro, détail d'une décision, suivi des runs et des contrôles qualité.
 - **Un pipeline planifié** avec Celery et Redis : chaque nuit à 3 h 33, toute la chaîne s'enchaîne et s'arrête à la première étape bloquante en échec.
-- **441 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+- **Une supervision Grafana** : quatre tableaux de bord versionnés (santé du pipeline, collecte, qualité, recherche), en lecture seule sur les tables du pipeline.
+- **491 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
 > **Pourquoi ne pas tout automatiser ?**
@@ -79,7 +84,7 @@ flowchart LR
 - [x] Étape 3 : contrôles qualité (9 contrôles sur 5 dimensions au départ, résultats historisés, écarts connus distingués des nouveaux) ; catalogue de requêtes écrit par moi, moteur réalisé par délégation à un agent
 - [x] Étape 4 : recherche (index Elasticsearch avec bascule d'alias, évaluation de la trouvabilité, API FastAPI en lecture seule) ; mapping, conception de l'évaluation, poids du titre et contrat de l'API décidés par moi, implémentation réalisée par délégation à un agent
 - [x] Étape 5 : planification du pipeline avec Celery et Redis (chaque nuit à 3 h 33, open data le lundi, fenêtre de recouvrement pour Judilibre, verrou, étapes bloquantes ou non) ; ordre de la chaîne, calendrier et règles d'échec décidés par moi, implémentation réalisée par délégation à un agent ; vérifié sur runs réels (run planifié, verrou, arrêt sur une étape en panne)
-- [ ] Étape 6 : supervision du pipeline avec Grafana (runs, évolution des contrôles qualité, trouvabilité, volumes de l'index), tableaux de bord versionnés
+- [x] Étape 6 : supervision du pipeline avec Grafana (santé des runs, collecte, qualité, recherche), tableaux de bord versionnés et rôle PostgreSQL en lecture seule ; choix des tableaux par moi, requêtes et implémentation réalisées par délégation à un agent, vérifiées sur les chiffres connus
 
 ## Lancer le projet
 ```bash
@@ -414,3 +419,4 @@ Documentation détaillée : [`docs/sources/autorite-concurrence.md`](docs/source
 - Le `robots.txt` du site interdit toutes les URL avec paramètres, dont la pagination de la liste : l'historique vient donc de l'open data, et le scraper de fraîcheur ne visite que la première page de la liste (une seule requête par run).
 - Les URL de la liste correspondent exactement au champ `url_site` de l'open data : elles servent de clé de comparaison entre le site et le jeu de données (vérifié sur les 20 décisions de la première page, toutes présentes dans l'open data le 25/09/2026).
 - **Le jeu de données est mis à jour chaque semaine, le dimanche vers 10 h** (horodatage `20260927-100049` dans l'URL directe du fichier) : l'ingestion planifiée a donc lieu la nuit du lundi.
+- **La publication hebdomadaire modifie aussi des décisions existantes** : celle du 27/09/2026 a ajouté 4 décisions et changé l'empreinte de 1237 autres (près d'une sur cinq). La couche Bronze écrasant l'ancienne version, la nature de ces modifications ne peut pas être analysée : argument concret pour une Bronze en append-only.
