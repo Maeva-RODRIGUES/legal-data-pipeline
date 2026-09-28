@@ -19,6 +19,8 @@
 
 Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration, contrôle qualité, recherche, planification et supervision.
 
+![Tableau de bord Grafana : santé du pipeline](docs/images/grafana-sante-du-pipeline.png)
+
 ```mermaid
 flowchart LR
     C((Celery Beat<br/>3 h 33)) -. déclenche .-> J
