@@ -359,7 +359,16 @@ Suite possible : des alertes Grafana (par exemple sur un run du pipeline en éch
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 
 - **Assistance conversationnelle (Claude)** : explications, discussions de conception, premières versions de code (dont les requêtes SQL des contrôles qualité) que je relis, teste sur les données réelles et adapte.
-- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)), le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)), l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)), l'évaluation de la trouvabilité ([PR #28](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/28)), l'API de recherche ([PR #30](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/30)), la fenêtre de recouvrement de Judilibre ([PR #32](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/32)) et la planification Celery ([PR #33](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/33)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
+- **Délégation à un agent (Claude Code)** : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md). Tâches déléguées :
+  - le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)) ;
+  - la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)) ;
+  - le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)) ;
+  - l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)) ;
+  - l'évaluation de la trouvabilité ([PR #28](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/28)) ;
+  - l'API de recherche ([PR #30](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/30)) ;
+  - la fenêtre de recouvrement de Judilibre ([PR #32](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/32)) ;
+  - la planification Celery ([PR #33](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/33)) ;
+  - la supervision Grafana ([PR #34](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/34)).
 
 **Ce qui reste de mon ressort :**
 - l'analyse de chaque source (documentation, `robots.txt`, structure des données) et les choix de conception qui en découlent ;
