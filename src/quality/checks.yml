@@ -46,15 +46,20 @@
   severity: warning
   description: >-
     Decisions without full text (empty or NULL), hence not searchable by content.
-    30 known for the Autorité as of 25/09/2026, mostly recent merger decisions
-    and 1990s documents.
+    For the Autorité, decisions of the last 90 days are left out: the public version
+    of a recent merger decision is published later. 25 older ones known as of
+    28/09/2026 (mostly 1990s documents and older merger decisions).
   sql: |
-    SELECT source, count(*) FILTER (WHERE text IS NULL OR btrim(text) = '') AS value
+    SELECT source,
+           count(*) FILTER (
+             WHERE (text IS NULL OR btrim(text) = '')
+               AND NOT (source = 'adlc-opendata' AND decision_date > current_date - 90)
+           ) AS value
     FROM silver.decisions
     GROUP BY source;
   expect:
     default: {op: "==", value: 0}
-    adlc-opendata: {op: "<=", value: 30}
+    adlc-opendata: {op: "<=", value: 25}
 
 - name: silver_rows_missing_from_index
   dimension: completeness
