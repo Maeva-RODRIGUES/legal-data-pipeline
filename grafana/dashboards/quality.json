@@ -1,0 +1,604 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Contrôles qualité au fil des runs (quality.check_results).",
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "state-timeline",
+      "title": "État des contrôles au fil des runs",
+      "description": "Statut de chaque contrôle, par source, à chaque run qualité (quality.check_results). Le statut est converti en code puis réaffiché en texte : pass, unchecked (aucune attente pour la source), no_data (source absente du résultat), fail, query_error (requête en échec, sans source : « — »).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 18
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT checked_at AS time,\n                   check_name || ' / ' || coalesce(source, '—') AS metric,\n                   CASE status\n                     WHEN 'pass' THEN 0\n                     WHEN 'unchecked' THEN 1\n                     WHEN 'no_data' THEN 2\n                     WHEN 'fail' THEN 3\n                     WHEN 'query_error' THEN 4\n                   END AS value\n            FROM quality.check_results\n            WHERE check_name IN ($check)\n              AND $__timeFilter(checked_at)\n            ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "pass",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "unchecked",
+                  "color": "text",
+                  "index": 1
+                },
+                "2": {
+                  "text": "no_data",
+                  "color": "orange",
+                  "index": 2
+                },
+                "3": {
+                  "text": "fail",
+                  "color": "red",
+                  "index": 3
+                },
+                "4": {
+                  "text": "query_error",
+                  "color": "purple",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Résultats en écart au dernier run",
+      "description": "Résultats du dernier run qualité dont le statut n'est pas pass. Un contrôle de sévérité error en fail, no_data ou query_error fait échouer le run du pipeline. Indépendant de la période choisie.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT check_name AS \"Contrôle\",\n                   source AS \"Source\",\n                   dimension AS \"Dimension\",\n                   severity AS \"Sévérité\",\n                   status AS \"Statut\",\n                   value AS \"Valeur\",\n                   expected AS \"Attendu\",\n                   error AS \"Erreur\"\n            FROM quality.check_results\n            WHERE run_id = (SELECT max(run_id) FROM quality.check_results)\n              AND status <> 'pass'\n            ORDER BY severity, check_name, source",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Aucun écart au dernier run"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Statut"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "pass": {
+                        "text": "pass",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "unchecked": {
+                        "text": "unchecked",
+                        "color": "text",
+                        "index": 1
+                      },
+                      "no_data": {
+                        "text": "no_data",
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "fail": {
+                        "text": "fail",
+                        "color": "red",
+                        "index": 3
+                      },
+                      "query_error": {
+                        "text": "query_error",
+                        "color": "purple",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Textes vides (empty_text)",
+      "description": "Décisions sans texte intégral. Pour l'Autorité, les décisions de moins de 90 jours ne sont comptées que depuis le 28/09/2026 (d'où la baisse de 32 à 25 ce jour-là). Pointillés : seuil en vigueur à chaque run (colonne expected), pour comparer chaque point à son propre seuil.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT checked_at AS time,\n           source || ' : valeur' AS metric,\n           value\n    FROM quality.check_results\n    WHERE check_name = 'empty_text'\n      AND source IS NOT NULL\n      AND $__timeFilter(checked_at)\n    UNION ALL\n    SELECT checked_at AS time,\n           source || ' : attendu (' || split_part(expected, ' ', 1) || ')' AS metric,\n           substring(expected FROM '-?[0-9]+(?:\\.[0-9]+)?')::numeric AS value\n    FROM quality.check_results\n    WHERE check_name = 'empty_text'\n      AND source IS NOT NULL\n      AND expected IS NOT NULL\n      AND $__timeFilter(checked_at)\n    ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": true,
+            "lineInterpolation": "linear"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^adlc-opendata.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^judilibre.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*attendu.*"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Numéros en double (duplicate_decision_number)",
+      "description": "Numéros de décision portés par plusieurs lignes de Silver, pour l'Autorité. Pointillés : seuil en vigueur à chaque run (colonne expected), pour comparer chaque point à son propre seuil.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 24,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT checked_at AS time,\n           source || ' : valeur' AS metric,\n           value\n    FROM quality.check_results\n    WHERE check_name = 'duplicate_decision_number'\n      AND source IS NOT NULL\n      AND $__timeFilter(checked_at)\n    UNION ALL\n    SELECT checked_at AS time,\n           source || ' : attendu (' || split_part(expected, ' ', 1) || ')' AS metric,\n           substring(expected FROM '-?[0-9]+(?:\\.[0-9]+)?')::numeric AS value\n    FROM quality.check_results\n    WHERE check_name = 'duplicate_decision_number'\n      AND source IS NOT NULL\n      AND expected IS NOT NULL\n      AND $__timeFilter(checked_at)\n    ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": true,
+            "lineInterpolation": "linear"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^adlc-opendata.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^judilibre.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*attendu.*"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Incohérences numéro / année (number_year_mismatch)",
+      "description": "Décisions de l'Autorité dont la date est impossible au regard de l'année de leur numéro. Pointillés : seuil en vigueur à chaque run (colonne expected), pour comparer chaque point à son propre seuil.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 24,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT checked_at AS time,\n           source || ' : valeur' AS metric,\n           value\n    FROM quality.check_results\n    WHERE check_name = 'number_year_mismatch'\n      AND source IS NOT NULL\n      AND $__timeFilter(checked_at)\n    UNION ALL\n    SELECT checked_at AS time,\n           source || ' : attendu (' || split_part(expected, ' ', 1) || ')' AS metric,\n           substring(expected FROM '-?[0-9]+(?:\\.[0-9]+)?')::numeric AS value\n    FROM quality.check_results\n    WHERE check_name = 'number_year_mismatch'\n      AND source IS NOT NULL\n      AND expected IS NOT NULL\n      AND $__timeFilter(checked_at)\n    ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": true,
+            "lineInterpolation": "linear"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^adlc-opendata.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^judilibre.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*attendu.*"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 41,
+  "tags": [
+    "legal-data-pipeline"
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "dimension",
+        "label": "Dimension",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "legal-postgres"
+        },
+        "query": "SELECT DISTINCT dimension\n                FROM quality.check_results\n                ORDER BY 1",
+        "definition": "SELECT DISTINCT dimension\n                FROM quality.check_results\n                ORDER BY 1",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 0,
+        "hide": 0,
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "check",
+        "label": "Contrôle",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "legal-postgres"
+        },
+        "query": "SELECT DISTINCT check_name\n                FROM quality.check_results\n                WHERE dimension IN ($dimension)\n                ORDER BY 1",
+        "definition": "SELECT DISTINCT check_name\n                FROM quality.check_results\n                WHERE dimension IN ($dimension)\n                ORDER BY 1",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 0,
+        "hide": 0,
+        "options": []
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "Europe/Paris",
+  "title": "Qualité",
+  "uid": "quality",
+  "weekStart": "monday"
+}

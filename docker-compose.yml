@@ -5,6 +5,8 @@ services:
       POSTGRES_USER: legal
       POSTGRES_PASSWORD: legal
       POSTGRES_DB: legal
+      # mot de passe du rôle grafana_reader, fixé par sql/008_grafana_reader_password.sh
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD manquant dans .env}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -53,6 +55,28 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+  grafana:
+    image: docker.io/grafana/grafana:13.2.2
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD manquant dans .env}  # appliqué à la création du volume
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD manquant dans .env}  # lu par la source de données
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DATE_FORMATS_DEFAULT_TIMEZONE: Europe/Paris
+      GF_ANALYTICS_REPORTING_ENABLED: "false"  # usage local : aucun appel sortant
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      postgres:
+        condition: service_started
 volumes:
   pgdata:
   esdata:
+  grafana-data:

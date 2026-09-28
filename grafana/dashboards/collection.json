@@ -1,0 +1,331 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Volumes collectés par run et par source (bronze.collection_runs).",
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Collecte : $source",
+      "description": "Décisions lues, nouvelles et modifiées à chaque run de la source (bronze.collection_runs). Un panneau par source : les volumes lus diffèrent trop (open data complet, fenêtre Judilibre, première page du site). Pour le scraper, « nouvelles » compte les décisions nouvelles dans son Bronze, pas les écarts avec l'open data (contrôle site_decisions_missing_from_opendata).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time,\n                   nb_fetched AS \"lues\",\n                   nb_new AS \"nouvelles\",\n                   nb_changed AS \"modifiées\"\n            FROM bronze.collection_runs\n            WHERE source = '$source'\n              AND status <> 'running'\n              AND $__timeFilter(started_at)\n            ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lues"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "nouvelles"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "modifiées"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "repeat": "source",
+      "repeatDirection": "h",
+      "maxPerRow": 3
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Décisions nouvelles et modifiées, toutes sources",
+      "description": "Activité réelle de la collecte : nouvelles et modifiées, empilées par source, invisibles à côté des volumes lus.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time,\n                   source AS metric,\n                   nb_new + nb_changed AS value\n            FROM bronze.collection_runs\n            WHERE source IN ($source)\n              AND status <> 'running'\n              AND $__timeFilter(started_at)\n            ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Runs de collecte",
+      "description": "Tous les runs de collecte de la période, échecs compris (compteurs partiels). Du / Au : fenêtre demandée (Judilibre) ou date du run.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT run_id AS \"Run\",\n                   source AS \"Source\",\n                   started_at AS \"Début\",\n                   date_type AS \"Type de date\",\n                   to_char(date_start, 'DD/MM/YYYY') AS \"Du\",\n                   to_char(date_end, 'DD/MM/YYYY') AS \"Au\",\n                   status AS \"Statut\",\n                   extract(epoch FROM finished_at - started_at) AS \"Durée\",\n                   nb_fetched AS \"Lues\",\n                   nb_new AS \"Nouvelles\",\n                   nb_changed AS \"Modifiées\",\n                   error AS \"Erreur\"\n            FROM bronze.collection_runs\n            WHERE source IN ($source)\n              AND $__timeFilter(started_at)\n            ORDER BY run_id DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Durée"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "noValue",
+                "value": "en cours"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Statut"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "success": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "success"
+                      },
+                      "failed": {
+                        "color": "red",
+                        "index": 1,
+                        "text": "failed"
+                      },
+                      "running": {
+                        "color": "blue",
+                        "index": 2,
+                        "text": "running"
+                      },
+                      "skipped": {
+                        "color": "text",
+                        "index": 3,
+                        "text": "skipped"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Run"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 41,
+  "tags": [
+    "legal-data-pipeline"
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "source",
+        "label": "Source",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "legal-postgres"
+        },
+        "query": "SELECT DISTINCT source\n            FROM bronze.collection_runs\n            WHERE source IN ('judilibre', 'adlc-opendata', 'adlc-scraper')\n            ORDER BY 1",
+        "definition": "SELECT DISTINCT source\n            FROM bronze.collection_runs\n            WHERE source IN ('judilibre', 'adlc-opendata', 'adlc-scraper')\n            ORDER BY 1",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 0,
+        "hide": 0,
+        "options": []
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "Europe/Paris",
+  "title": "Collecte",
+  "uid": "collection",
+  "weekStart": "monday"
+}

@@ -1,0 +1,537 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Runs du pipeline nocturne et fraîcheur de chaque étape (bronze.collection_runs).",
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Dernier run du pipeline",
+      "description": "Statut du dernier run du pipeline (source `pipeline` de bronze.collection_runs), hors runs `skipped` : un déclenchement refusé par le verrou masquerait le run réel. Indépendant de la période choisie.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT status\n            FROM bronze.collection_runs\n            WHERE source = 'pipeline'\n              AND status <> 'skipped'\n            ORDER BY run_id DESC\n            LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "success": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "success"
+                },
+                "failed": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "failed"
+                },
+                "running": {
+                  "color": "blue",
+                  "index": 2,
+                  "text": "running"
+                },
+                "skipped": {
+                  "color": "text",
+                  "index": 3,
+                  "text": "skipped"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "aucun run"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^status$/",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Détail du dernier run",
+      "description": "Le même run que le statut ci-contre ; durée vide tant que le run est en cours.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 18,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT run_id AS \"Run\",\n                   date_type AS \"Déclenchement\",\n                   started_at AS \"Début\",\n                   extract(epoch FROM finished_at - started_at) AS \"Durée\",\n                   status AS \"Statut\",\n                   error AS \"Erreur\"\n            FROM bronze.collection_runs\n            WHERE source = 'pipeline'\n              AND status <> 'skipped'\n            ORDER BY run_id DESC\n            LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Durée"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "noValue",
+                "value": "en cours"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Statut"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "success": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "success"
+                      },
+                      "failed": {
+                        "color": "red",
+                        "index": 1,
+                        "text": "failed"
+                      },
+                      "running": {
+                        "color": "blue",
+                        "index": 2,
+                        "text": "running"
+                      },
+                      "skipped": {
+                        "color": "text",
+                        "index": 3,
+                        "text": "skipped"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Run"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Durée des runs du pipeline",
+      "description": "Durée de chaque run terminé du pipeline, par statut. Un run `failed` s'arrête à sa première étape bloquante en échec, d'où une durée plus courte.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time,\n                   status AS metric,\n                   extract(epoch FROM finished_at - started_at) AS value\n            FROM bronze.collection_runs\n            WHERE source = 'pipeline'\n              AND status IN ('success', 'failed')\n              AND $__timeFilter(started_at)\n            ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0
+          },
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "success"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "bargauge",
+      "title": "Heures depuis le dernier succès, par étape",
+      "description": "Heures écoulées depuis le dernier run réussi de chaque étape (et du pipeline). Orange au-delà de 30 h : une nuit manquée. Rouge au-delà de 168 h, seuil du contrôle `hours_since_last_success`. L'open data, hebdomadaire, n'a pas de palier orange. Indépendant de la période choisie.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(extract(epoch FROM now() - max(finished_at) FILTER (WHERE source = 'judilibre')) / 3600, 1) AS \"judilibre\",\n                   round(extract(epoch FROM now() - max(finished_at) FILTER (WHERE source = 'adlc-opendata')) / 3600, 1) AS \"adlc-opendata\",\n                   round(extract(epoch FROM now() - max(finished_at) FILTER (WHERE source = 'adlc-scraper')) / 3600, 1) AS \"adlc-scraper\",\n                   round(extract(epoch FROM now() - max(finished_at) FILTER (WHERE source = 'silver')) / 3600, 1) AS \"silver\",\n                   round(extract(epoch FROM now() - max(finished_at) FILTER (WHERE source = 'search')) / 3600, 1) AS \"search\",\n                   round(extract(epoch FROM now() - max(finished_at) FILTER (WHERE source = 'search-eval')) / 3600, 1) AS \"search-eval\",\n                   round(extract(epoch FROM now() - max(finished_at) FILTER (WHERE source = 'quality')) / 3600, 1) AS \"quality\",\n                   round(extract(epoch FROM now() - max(finished_at) FILTER (WHERE source = 'pipeline')) / 3600, 1) AS \"pipeline\"\n            FROM bronze.collection_runs\n            WHERE status = 'success'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "decimals": 1,
+          "min": 0,
+          "max": 192,
+          "noValue": "aucun succès",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 168
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "adlc-opendata"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 168
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "valueMode": "color",
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Historique des runs du pipeline",
+      "description": "Tous les runs du pipeline de la période, `skipped` compris (déclenchement refusé par le verrou). L'erreur donne l'étape bloquante en échec, ou la note des étapes non bloquantes en échec pour un run réussi.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT run_id AS \"Run\",\n                   started_at AS \"Début\",\n                   date_type AS \"Déclenchement\",\n                   status AS \"Statut\",\n                   extract(epoch FROM finished_at - started_at) AS \"Durée\",\n                   error AS \"Erreur\"\n            FROM bronze.collection_runs\n            WHERE source = 'pipeline'\n              AND $__timeFilter(started_at)\n            ORDER BY run_id DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Durée"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "noValue",
+                "value": "en cours"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Statut"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "success": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "success"
+                      },
+                      "failed": {
+                        "color": "red",
+                        "index": 1,
+                        "text": "failed"
+                      },
+                      "running": {
+                        "color": "blue",
+                        "index": 2,
+                        "text": "running"
+                      },
+                      "skipped": {
+                        "color": "text",
+                        "index": 3,
+                        "text": "skipped"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Run"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Erreur"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 300
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 41,
+  "tags": [
+    "legal-data-pipeline"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "Europe/Paris",
+  "title": "Santé du pipeline",
+  "uid": "pipeline-health",
+  "weekStart": "monday"
+}

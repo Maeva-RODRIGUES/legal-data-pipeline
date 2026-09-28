@@ -1,0 +1,370 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Volumes de l'index Elasticsearch et trouvabilité des décisions (schéma search).",
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Décisions indexées par source",
+      "description": "Documents de l'index à chaque reconstruction dont l'alias `decisions` a basculé, empilés par source (search.index_stats). Une reconstruction non basculée n'a pas de barre : son index a été supprimé ; elle figure dans le tableau ci-contre.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT created_at AS time,\n                   source AS metric,\n                   indexed_count AS value\n            FROM search.index_stats\n            WHERE alias_switched\n              AND $__timeFilter(created_at)\n            ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "adlc-opendata"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "judilibre"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Reconstructions de l'index",
+      "description": "Une ligne par source et par reconstruction. L'alias ne bascule que si les comptes de Silver et de l'index concordent et qu'aucun document n'est rejeté ; comptes vides : le comptage a échoué (par exemple Elasticsearch arrêté).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT run_id AS \"Run\",\n                   created_at AS \"Date\",\n                   index_name AS \"Index\",\n                   source AS \"Source\",\n                   silver_count AS \"Silver\",\n                   indexed_count AS \"Indexées\",\n                   rejected_count AS \"Rejetées\",\n                   CASE WHEN alias_switched THEN 'oui' ELSE 'non' END AS \"Bascule\"\n            FROM search.index_stats\n            WHERE $__timeFilter(created_at)\n            ORDER BY stat_id DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bascule"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "oui": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "non": {
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Run"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Trouvabilité par numéro",
+      "description": "Recherche exacte du numéro de chaque décision de l'échantillon, dans le top 10 (search.findability_runs). hit@1 est inférieur à 100 % à cause des numéros partagés par plusieurs décisions.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT created_at AS time,\n                   hit_at_1 AS \"hit@1\",\n                   hit_at_10 AS \"hit@10\",\n                   mrr AS \"MRR\"\n            FROM search.findability_runs\n            WHERE mode = 'number'\n              AND $__timeFilter(created_at)\n            ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": true
+          },
+          "unit": "percentunit",
+          "max": 1,
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Trouvabilité par titre",
+      "description": "Titre de la décision comme requête, décisions de l'Autorité seulement. Une série par métrique et par poids du titre évalué (2 : poids de l'API).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT r.created_at AS time,\n                   m.name || ' (poids ' || rtrim(rtrim(r.title_boost::text, '0'), '.') || ')' AS metric,\n                   m.value\n            FROM search.findability_runs r\n            CROSS JOIN LATERAL (\n              VALUES ('hit@1', r.hit_at_1), ('hit@10', r.hit_at_10), ('MRR', r.mrr)\n            ) AS m (name, value)\n            WHERE r.mode = 'title'\n              AND $__timeFilter(r.created_at)\n            ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": true
+          },
+          "unit": "percentunit",
+          "max": 1,
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Hit@1 par titre, par groupe (poids 2)",
+      "description": "hit@1 recalculé par groupe depuis search.findability_results (rang absent = hors top 10, compté comme un échec). Le groupe « titre non ambigu » correspond au contrôle findability_by_title_unambiguous (seuil 98 %) ; les titres ambigus (partagés par plusieurs décisions) ne peuvent pas tous être en 1re position.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "legal-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "legal-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT r.created_at AS time,\n                   g.name AS metric,\n                   avg(coalesce(f.rank = 1, false)::int) AS value\n            FROM search.findability_results f\n            JOIN search.findability_runs r ON r.eval_id = f.eval_id\n            CROSS JOIN LATERAL (\n              VALUES (CASE WHEN f.ambiguous_title THEN 'titre ambigu' ELSE 'titre non ambigu' END),\n                     (CASE WHEN f.has_text THEN 'avec texte' ELSE 'sans texte' END)\n            ) AS g (name)\n            WHERE r.mode = 'title'\n              AND r.title_boost = 2\n              AND $__timeFilter(r.created_at)\n            GROUP BY 1, 2\n            ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": true
+          },
+          "unit": "percentunit",
+          "max": 1,
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 41,
+  "tags": [
+    "legal-data-pipeline"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "Europe/Paris",
+  "title": "Recherche",
+  "uid": "search",
+  "weekStart": "monday"
+}
