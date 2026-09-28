@@ -20,6 +20,39 @@ services:
       - "127.0.0.1:9200:9200"
     volumes:
       - esdata:/usr/share/elasticsearch/data
+  redis:
+    image: redis:7-alpine  # broker Celery ; aucun port publié sur l'hôte
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  worker:
+    build: .
+    command: celery -A src.pipeline.app worker --loglevel=INFO --concurrency=1 --max-tasks-per-child=1
+    environment:
+      DATABASE_URL: postgresql://legal:legal@postgres:5432/legal
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      CELERY_BROKER_URL: redis://redis:6379/0
+      JUDILIBRE_API_KEY: ${JUDILIBRE_API_KEY:-}
+      ADLC_OPENDATA_URL: ${ADLC_OPENDATA_URL:-}
+    volumes:
+      - ./data:/app/data  # fichier open data
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
+  beat:
+    build: .
+    command: celery -A src.pipeline.app beat --loglevel=INFO --schedule /tmp/celerybeat-schedule
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
 volumes:
   pgdata:
   esdata:

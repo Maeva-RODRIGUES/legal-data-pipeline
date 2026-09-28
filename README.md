@@ -7,18 +7,20 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.19-005571?logo=elasticsearch&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![Celery](https://img.shields.io/badge/Celery-Redis-37814A?logo=celery&logoColor=white)
 ![Podman](https://img.shields.io/badge/Podman-Compose-892CA0?logo=podman&logoColor=white)
 ![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-scraping-4B8BBE?logo=python&logoColor=white)
-![pytest](https://img.shields.io/badge/pytest-370_tests-0A9EDC?logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-441_tests-0A9EDC?logo=pytest&logoColor=white)
 ![Ruff](https://img.shields.io/badge/Ruff-lint-D7FF64?logo=ruff&logoColor=black)
 ![pre-commit](https://img.shields.io/badge/pre--commit-enabled-FAB040?logo=precommit&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-agent-D97757?logo=anthropic&logoColor=white)
 
-Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration, contrôle qualité et recherche.
+Mini-pipeline de données juridiques : collecte multi-sources (API, open data, scraping), structuration, contrôle qualité, recherche et planification.
 
 ```mermaid
 flowchart LR
+    C((Celery Beat<br/>3 h 33)) -. déclenche .-> J
     J[API Judilibre] --> B[(Bronze<br/>PostgreSQL)]
     O[Open data ADLC] --> B
     W[Scraper ADLC<br/>de fraîcheur] --> B
@@ -36,11 +38,12 @@ flowchart LR
 
 ## En bref
 - **3 sources** : l'API Judilibre, l'open data et le site de l'Autorité de la concurrence.
-- **8151 décisions** dans la couche Silver : 6683 de l'Autorité de la concurrence, 1468 de Judilibre.
+- **8155 décisions** dans la couche Silver : 6687 de l'Autorité de la concurrence, 1468 de Judilibre.
 - **13 contrôles qualité** sur 5 dimensions (complétude, validité, unicité, cohérence, fraîcheur), résultats historisés.
 - **Un index Elasticsearch** reconstruit à chaque run, avec une évaluation de la trouvabilité : 100 % des décisions retrouvées par leur numéro, et 100 % des décisions au titre non ambigu retrouvées en 1ʳᵉ position par leur titre.
 - **Une API FastAPI** en lecture seule : recherche plein texte ou par numéro, détail d'une décision, suivi des runs et des contrôles qualité.
-- **370 tests**, sans appel réseau, lancés par la CI à chaque pull request.
+- **Un pipeline planifié** avec Celery et Redis : chaque nuit à 3 h 33, toute la chaîne s'enchaîne et s'arrête à la première étape bloquante en échec.
+- **441 tests**, sans appel réseau, lancés par la CI à chaque pull request.
 
 > [!IMPORTANT]
 > **Pourquoi ne pas tout automatiser ?**
@@ -52,7 +55,8 @@ flowchart LR
 > - une décision peut être **modifiée sans que sa date de mise à jour change**, ce que seule la comparaison des empreintes a détecté ;
 > - pour la couche Silver, **96 tests passaient, mais le premier run réel a révélé 6683 anomalies** : la spécification décrivait comme du texte des champs qui sont de vraies listes JSON. Vérifié avec `jsonb_typeof`, corrigé, et testé depuis sur de vraies décisions du Bronze ;
 > - pour les contrôles qualité, une première version du contrôle de cohérence entre numéro et date levait **42 alertes, dont 39 fausses** : en examinant les décisions une par une, j'ai identifié une règle de la source (la numérotation d'une année se prolonge sur les premiers mois de la suivante) et isolé **les 3 vraies incohérences** ;
-> - après la perte de la base lors d'une mise à jour de Podman, le pipeline s'est reconstruit à l'identique à partir des scripts, vérifié par les contrôles qualité ; la nouvelle collecte a révélé que **Judilibre publie des décisions avec plusieurs jours de retard**, sous une date de mise à jour passée : 16 décisions sur une fenêtre de deux jours le 23/09, 127 le 27/09.
+> - après la perte de la base lors d'une mise à jour de Podman, le pipeline s'est reconstruit à l'identique à partir des scripts, vérifié par les contrôles qualité ; la nouvelle collecte a révélé que **Judilibre publie des décisions avec plusieurs jours de retard**, sous une date de mise à jour passée : 16 décisions sur une fenêtre de deux jours le 23/09, 127 le 27/09 ;
+> - le premier run planifié a fait ressortir un phénomène voisin à l'Autorité : **les décisions de concentration récentes arrivent sans texte**, leur version publique étant publiée plus tard. Le contrôle des textes vides accorde donc un délai de 90 jours, au lieu d'un seuil fixe qui aurait alerté chaque semaine.
 
 ## Objectif
 - **Bronze** : collecter des décisions de justice et d'autorités administratives, stockées brutes dans PostgreSQL :
@@ -74,7 +78,7 @@ flowchart LR
 - [x] Étape 2 : couche Silver (schéma commun Judilibre et Autorité de la concurrence, reconstruction complète à chaque run, 6707 décisions au premier run, aucune anomalie), réalisée par délégation à un agent
 - [x] Étape 3 : contrôles qualité (9 contrôles sur 5 dimensions au départ, résultats historisés, écarts connus distingués des nouveaux) ; catalogue de requêtes écrit par moi, moteur réalisé par délégation à un agent
 - [x] Étape 4 : recherche (index Elasticsearch avec bascule d'alias, évaluation de la trouvabilité, API FastAPI en lecture seule) ; mapping, conception de l'évaluation, poids du titre et contrat de l'API décidés par moi, implémentation réalisée par délégation à un agent
-- [ ] Étape 5 : planification du pipeline avec Celery et Redis (Celery Beat), chaque nuit à 3 h 33 ; la fenêtre de recouvrement de la collecte Judilibre est déjà en place
+- [x] Étape 5 : planification du pipeline avec Celery et Redis (chaque nuit à 3 h 33, open data le lundi, fenêtre de recouvrement pour Judilibre, verrou, étapes bloquantes ou non) ; ordre de la chaîne, calendrier et règles d'échec décidés par moi, implémentation réalisée par délégation à un agent ; vérifié sur runs réels (run planifié, verrou, arrêt sur une étape en panne)
 - [ ] Étape 6 : supervision du pipeline avec Grafana (runs, évolution des contrôles qualité, trouvabilité, volumes de l'index), tableaux de bord versionnés
 
 ## Lancer le projet
@@ -94,6 +98,8 @@ python -m src.search.evaluate                             # évaluation de la tr
 python -m src.quality.run                                 # contrôles qualité ; code de sortie 1 si un contrôle bloquant échoue
 uvicorn src.api.main:app                                  # API de recherche en lecture seule ; documentation : http://127.0.0.1:8000/docs
 ```
+
+`compose up -d` démarre aussi le pipeline planifié : Redis, le worker Celery et Beat (voir [Planification](#planification)). Après une modification du code, reconstruire leur image avec `podman compose up -d --build`. Renseigner `ADLC_OPENDATA_URL` dans `.env` pour l'ingestion hebdomadaire de l'open data.
 
 Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer à la main les migrations Silver, qualité et recherche (PowerShell) :
 ```powershell
@@ -147,12 +153,20 @@ src/
 │   ├── query.py              # requêtes par numéro et par titre, partagées avec l'API
 │   ├── findability.py        # échantillon, ambiguïtés, rangs, métriques et rapport de l'évaluation
 │   └── evaluate.py           # évaluation de la findability, résultats dans search.findability_*
-└── api/
-    ├── main.py               # application FastAPI : routes, format unique des erreurs
-    ├── search.py             # corps de recherche autour de query.py (filtres, pagination, surlignage)
-    ├── backends.py           # Elasticsearch et PostgreSQL en lecture seule, indisponibilité en 503
-    ├── models.py             # modèles des réponses, repris dans la documentation /docs
-    └── display.py            # titre d'affichage des décisions sans titre (citation Judilibre)
+├── api/
+│   ├── main.py               # application FastAPI : routes, format unique des erreurs
+│   ├── search.py             # corps de recherche autour de query.py (filtres, pagination, surlignage)
+│   ├── backends.py           # Elasticsearch et PostgreSQL en lecture seule, indisponibilité en 503
+│   ├── models.py             # modèles des réponses, repris dans la documentation /docs
+│   └── display.py            # titre d'affichage des décisions sans titre (citation Judilibre)
+└── pipeline/
+    ├── app.py                # application Celery : broker Redis, fuseau Europe/Paris, un processus par étape
+    ├── schedule.py           # planification de Beat (03:33, heure de Paris) et prochaine exécution
+    ├── steps.py              # étapes (script, bloquante ou non, réseau ou non) et appel de leur point d'entrée
+    ├── tasks.py              # tâches : déclenchement, chaîne des étapes, retries, fin du run
+    ├── lock.py               # verrou Redis : un seul run du pipeline à la fois
+    ├── runlog.py             # journal des runs du pipeline dans bronze.collection_runs
+    └── trigger.py            # déclenchement manuel et affichage de la prochaine exécution
 sql/
 ├── 001_bronze.sql            # schéma bronze : documents bruts et journal des runs
 ├── 002_add_date_type.sql     # type de date filtré (update | creation) dans le journal des runs
@@ -162,11 +176,13 @@ sql/
 └── 006_findability.sql       # schéma search : tables findability_runs et findability_results
 tests/
 ├── fixtures/                 # page HTML et extrait JSON, pour tester sans appel réseau
-└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche, API)
+└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche, API, pipeline)
 docs/
 ├── api/                      # copie de référence de la spécification OpenAPI de Judilibre
 ├── sources/                  # analyse des sources (structure des données, écarts constatés)
 └── tasks/                    # spécifications des tâches déléguées à un agent
+Dockerfile                    # image du worker et de Beat : Python 3.12 slim, utilisateur non root
+.dockerignore                 # seuls requirements.txt et src/ entrent dans l'image (ni .env, ni data/)
 ```
 
 ## Couche Silver
@@ -186,7 +202,7 @@ Le run est journalisé dans `bronze.collection_runs` (source `silver`). Spécifi
 Chaque contrôle est une requête SQL associée à une attente, déclarée dans [`src/quality/checks.yml`](src/quality/checks.yml). Je tiens ce catalogue moi-même (requêtes et seuils) ; le moteur (`src/quality/`) se contente de les exécuter.
 
 - Chaque requête renvoie une ligne par source, avec deux colonnes : `source` et `value`.
-- Les attentes (`==`, `<=`, `>=`, `<`, `>`) sont données par source, avec une entrée `default` facultative. Un **écart connu et documenté** a sa propre attente (par exemple 30 textes vides pour l'Autorité) : il ne déclenche pas d'alerte, alors qu'un nouvel écart ressort.
+- Les attentes (`==`, `<=`, `>=`, `<`, `>`) sont données par source, avec une entrée `default` facultative. Un **écart connu et documenté** a sa propre attente (par exemple 25 décisions anciennes de l'Autorité sans texte) : il ne déclenche pas d'alerte, alors qu'un nouvel écart ressort.
 - Statuts d'un résultat :
   - `pass` / `fail` : la valeur respecte ou non l'attente ;
   - `no_data` : une source déclarée dans l'attente est absente du résultat ;
@@ -202,9 +218,9 @@ L'option `--checks <chemin>` permet de lancer un autre catalogue, par exemple un
 
 **Au 26/09/2026** : 12 contrôles, 24 résultats, tous `pass`, dont la complétude et la fraîcheur de l'index, et sa trouvabilité (100 % par numéro, 100 % en 1ʳᵉ position par titre hors titres ambigus).
 
-**Au 27/09/2026**, après la reconstruction complète du pipeline sur une base neuve : les mêmes 24 résultats, tous `pass`, avec exactement les mêmes écarts connus.
+**Au 27/09/2026**, après la reconstruction complète du pipeline sur une base neuve : les mêmes 24 résultats, tous `pass`, avec exactement les mêmes écarts connus. Depuis, `duplicate_decision_number` ne porte plus que sur l'Autorité, et `duplicate_ecli` contrôle l'unicité des décisions Judilibre : un numéro de pourvoi identifie une affaire, pas une décision (13 contrôles, 24 résultats, tous `pass`).
 
-Depuis, `duplicate_decision_number` ne porte plus que sur l'Autorité, et `duplicate_ecli` contrôle l'unicité des décisions Judilibre : un numéro de pourvoi identifie une affaire, pas une décision (13 contrôles, 24 résultats, tous `pass`).
+**Au 28/09/2026**, le premier run planifié a fait passer `empty_text` de 30 à 32 : deux nouvelles décisions de concentration, arrivées sans texte. Le contrôle ne compte désormais que les décisions de plus de 90 jours (25 connues) : une décision récente sans texte n'alerte plus, mais si son texte n'arrive toujours pas 90 jours plus tard, elle entre dans le comptage et le contrôle alerte.
 
 ## Recherche
 Les décisions de Silver sont indexées dans Elasticsearch (service `elasticsearch` du `docker-compose.yml`, un seul nœud, sécurité désactivée : usage local uniquement). Le mapping, dans [`src/search/mapping.json`](src/search/mapping.json), est strict : un champ non déclaré fait rejeter le document.
@@ -254,11 +270,54 @@ uvicorn src.api.main:app        # http://127.0.0.1:8000/docs : documentation int
 
 Contrat détaillé (paramètres, réponses, erreurs) : [`docs/tasks/search-api-contract.md`](docs/tasks/search-api-contract.md).
 
+## Planification
+Le pipeline complet tourne chaque nuit avec Celery et Redis, dans des conteneurs (le worker Celery ne fonctionne pas sous Windows). Les scripts existants sont appelés tels quels. Spécification : [`docs/tasks/celery-pipeline.md`](docs/tasks/celery-pipeline.md).
+
+- **Services** du `docker-compose.yml` : `redis` (broker, aucun port publié sur l'hôte), `worker` (une étape à la fois, chacune dans un processus neuf) et `beat` (planificateur), construits à partir du `Dockerfile`. Dans Compose, les services se joignent par leur nom (`postgres:5432`, `elasticsearch:9200`, `redis:6379`) ; les scripts lancés depuis Windows gardent `127.0.0.1`. `JUDILIBRE_API_KEY` et `ADLC_OPENDATA_URL` viennent de `.env` ; `data/` est monté dans le worker.
+- **Horaire** : chaque nuit à **3 h 33, heure de Paris**. Le fuseau `Europe/Paris` est déclaré explicitement : l'horaire suit les changements d'heure, et 3 h 33 est hors de la plage 2 h-3 h où ils ont lieu.
+- **Exécution manquée** : si le worker et Beat ne tournent pas à 3 h 33 (ordinateur éteint), Beat lance l'exécution manquée dès son redémarrage, une seule fois même après plusieurs nuits (observé le 28/09/2026 : run `nightly` lancé à 11 h 57).
+- **Open data, une fois par semaine, la nuit du lundi** : le fichier est publié le dimanche vers 10 h (horodatage `20260927-100049` dans son URL directe) ; la nuit du lundi récupère donc le plus récent.
+
+| | Étape | Script | Si elle échoue |
+|---|---|---|---|
+| 1 | `adlc-opendata`, **le lundi seulement** | `src.collector.adlc_opendata.run --url $ADLC_OPENDATA_URL` | la chaîne continue |
+| 2 | `judilibre` | `src.collector.judilibre.run` (fenêtre incrémentale, recouvrement de 14 jours) | la chaîne s'arrête |
+| 3 | `adlc-scraper` | `src.collector.adlc_scraper.run` | la chaîne continue |
+| 4 | `silver` | `src.silver.run` | la chaîne s'arrête |
+| 5 | `search` | `src.search.run` | la chaîne s'arrête |
+| 6 | `search-eval` | `src.search.evaluate` | la chaîne s'arrête |
+| 7 | `quality` | `src.quality.run` | la chaîne s'arrête |
+
+Règles :
+- **Échec d'une étape** : une exception ou un code de sortie non nul. Un index dont l'alias n'est pas basculé (`search`) ou un verdict qualité en échec (`quality`) font donc échouer le run du pipeline.
+- **Étape bloquante en échec** : la chaîne s'arrête, et le run du pipeline passe en `failed`, avec le nom de l'étape dans `error`.
+- **Étape non bloquante en échec** (open data, scraper) : la chaîne continue et le run du pipeline finit en `success`, **avec une note dans `error`** : `non-blocking step failed: adlc-scraper` (plusieurs étapes : `non-blocking steps failed: adlc-opendata, adlc-scraper`). Un échec qui dure est signalé par le contrôle de fraîcheur `hours_since_last_success` (168 h).
+- **Open data** : sans `ADLC_OPENDATA_URL`, l'étape échoue avec un message explicite ; le fichier local n'est jamais réingéré en silence.
+- **Retries** : seulement pour les étapes réseau (open data, Judilibre, scraper), sur une erreur de connexion ou un délai dépassé : 3 au plus, après 60, 120 puis 240 secondes, en plus des 5 tentatives des clients HTTP. Aucun retry pour Silver, l'index, l'évaluation et la qualité : un échec s'y examine, il ne se répète pas. Chaque tentative d'un collecteur a son propre run.
+- **Verrou** : un verrou Redis empêche deux runs simultanés. Un run déclenché pendant un autre est journalisé en `skipped` (`error` : `lock held by pipeline run <id>`) et rien n'est exécuté. Le worker ne traitant qu'une tâche à la fois, ce déclenchement est examiné à la fin de l'étape en cours.
+- **Worker arrêté en cours de run** : l'étape interrompue n'est pas rejouée, le run du pipeline reste `running`, et le verrou expire au bout de 6 heures.
+
+**Vérifié sur runs réels (28/09/2026)** : un run planifié rattrapé au redémarrage (`nightly`, open data compris), un second déclenchement pendant un run journalisé en `skipped` (`lock held by pipeline run 38`), et, avec Elasticsearch arrêté, une chaîne arrêtée à l'indexation (run `failed`, `error` : `search`), sans évaluation ni contrôles qualité. Une chaîne complète dure moins de 3 minutes.
+
+Déclenchement manuel, depuis Windows (Redis n'étant pas exposé, la commande s'exécute dans le worker) :
+```powershell
+podman exec legal-data-pipeline-worker-1 python -m src.pipeline.trigger                  # chaîne complète, sans l'open data
+podman exec legal-data-pipeline-worker-1 python -m src.pipeline.trigger --with-opendata  # avec l'open data en tête
+podman exec legal-data-pipeline-worker-1 python -m src.pipeline.trigger --next-run       # prochaine exécution planifiée
+podman logs -f legal-data-pipeline-worker-1                                               # suivre le run
+```
+
+Chaque run du pipeline est journalisé dans `bronze.collection_runs` : source `pipeline`, `date_type` `nightly` ou `manual`, statut `success`, `failed` ou `skipped`. Chaque étape y garde aussi son propre run. Les derniers runs du pipeline :
+```powershell
+podman exec legal-data-pipeline-postgres-1 psql -U legal -d legal -P pager=off -c "SELECT run_id, date_type, status, error, started_at, finished_at FROM bronze.collection_runs WHERE source = 'pipeline' ORDER BY run_id DESC LIMIT 10"
+```
+L'API les expose aussi : `GET /runs?source=pipeline` (filtre `status=skipped` accepté).
+
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
 
 - **Assistance conversationnelle (Claude)** : explications, discussions de conception, premières versions de code (dont les requêtes SQL des contrôles qualité) que je relis, teste sur les données réelles et adapte.
-- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)), le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)), l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)), l'évaluation de la trouvabilité ([PR #28](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/28)) et l'API de recherche ([PR #30](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/30)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
+- **Délégation à un agent (Claude Code)**, par exemple pour le scraper de fraîcheur ([PR #18](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/18)), la couche Silver ([PR #19](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/19)), le moteur des contrôles qualité ([PR #20](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/20)), l'index Elasticsearch ([PR #22](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/22)), l'évaluation de la trouvabilité ([PR #28](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/28)), l'API de recherche ([PR #30](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/30)), la fenêtre de recouvrement de Judilibre ([PR #32](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/32)) et la planification Celery ([PR #33](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/pull/33)) : je rédige une spécification (contexte, contraintes, critères de réussite) dans [`docs/tasks/`](docs/tasks/), l'agent propose un plan que je relis et corrige, puis produit le code et les tests sur une branche, et je valide avant toute fusion. Les conventions données à l'agent sont dans [`CLAUDE.md`](CLAUDE.md).
 
 **Ce qui reste de mon ressort :**
 - l'analyse de chaque source (documentation, `robots.txt`, structure des données) et les choix de conception qui en découlent ;
@@ -312,8 +371,9 @@ Documentation détaillée : [`docs/sources/autorite-concurrence.md`](docs/source
 - `type_decision` mélange libellés, codes et listes (type principal + sous-type : `MC`, `DEX`, `SOA`). Les listes sont du texte au format Python dans le CSV, mais de vraies listes JSON dans le JSON : un affichage trompeur a d'abord fait croire le contraire, et seul le premier run réel de la couche Silver l'a révélé.
 - Deux familles de schémas (décisions/avis et concentrations), plus un cas limite à 20 champs (la lettre du ministre de l'économie, dont le libellé contient une faute de frappe) : en Silver, le tronc commun est complété par une colonne `attributes`.
 - `decision_simplifiee` vaut `null` pour 28 décisions : 27 des 28 décisions `DEX` et la lettre du ministre. Une seule décision `DEX` a une valeur : ce n'est donc pas une règle stricte.
-- **30 décisions n'ont pas de texte intégral** (chaîne vide), et ne peuvent donc pas être retrouvées par une recherche dans leur contenu : 21 décisions de concentration, dont 8 datées de 2026, et des avis et décisions des années 1990 et 2000. Hypothèses à vérifier : une version publique pas encore publiée pour les concentrations récentes, des PDF numérisés sans texte extrait pour les documents anciens.
+- **Des décisions n'ont pas de texte intégral** (chaîne vide), et ne peuvent donc pas être retrouvées par une recherche dans leur contenu : 32 le 28/09/2026. Les plus récentes sont des décisions de concentration de septembre 2026 (`26-DCC-182` à `26-DCC-188`) : leur version publique est publiée après la décision. Le contrôle `empty_text` ne compte donc que les décisions de plus de 90 jours (25, surtout des documents des années 1990 et d'anciennes décisions de concentration).
 - **La numérotation d'une année se prolonge sur les premiers mois de la suivante** (39 décisions, par exemple `00-D-68` à `00-D-92`, datées de janvier à mars 2001) : ce n'est pas une erreur. En revanche, **3 décisions ont une date impossible**, antérieure à l'année de leur numéro : `95-MC-06` (1990), `95-D-26` (1992) et `96-D-03` (1995).
 - **82 titres sont partagés par 183 décisions** (en confondant les apostrophes `'` et `’`) : une recherche par titre ne peut pas les distinguer. Les 5 paires de décisions publiées deux fois partagent à la fois leur numéro et leur titre.
 - Le `robots.txt` du site interdit toutes les URL avec paramètres, dont la pagination de la liste : l'historique vient donc de l'open data, et le scraper de fraîcheur ne visite que la première page de la liste (une seule requête par run).
 - Les URL de la liste correspondent exactement au champ `url_site` de l'open data : elles servent de clé de comparaison entre le site et le jeu de données (vérifié sur les 20 décisions de la première page, toutes présentes dans l'open data le 25/09/2026).
+- **Le jeu de données est mis à jour chaque semaine, le dimanche vers 10 h** (horodatage `20260927-100049` dans l'URL directe du fichier) : l'ingestion planifiée a donc lieu la nuit du lundi.

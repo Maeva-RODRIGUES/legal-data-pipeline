@@ -8,7 +8,7 @@ from pydantic import BaseModel
 # Vocabulaires de Silver et de src.quality ; leur concordance est vérifiée par les tests.
 Source = Literal["judilibre", "adlc-opendata"]
 DecisionType = Literal["concentration", "decision", "avis", "lettre_ministre"]
-RunStatus = Literal["running", "success", "failed"]
+RunStatus = Literal["running", "success", "failed", "skipped"]  # skipped : verrou du pipeline
 CheckStatus = Literal["pass", "fail", "no_data", "unchecked", "query_error"]
 
 

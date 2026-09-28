@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Sequence
 from datetime import date, timedelta
 
 from dotenv import load_dotenv
@@ -79,9 +80,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     load_dotenv()
-    args = build_parser().parse_args()
+    args = build_parser().parse_args(argv)
     if args.start and args.lookback_days is not None:
         print("--lookback-days ignoré : --start est fourni.")
 

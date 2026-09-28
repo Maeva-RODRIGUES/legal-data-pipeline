@@ -113,9 +113,9 @@ def format_report(results: Sequence[CheckResult]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     load_dotenv()
-    args = parse_args()
+    args = parse_args(argv)
     checks = load_checks(args.checks)  # catalogue invalide : échec avant d'ouvrir un run
     store = BronzeStore(os.environ["DATABASE_URL"])
     today = date.today()

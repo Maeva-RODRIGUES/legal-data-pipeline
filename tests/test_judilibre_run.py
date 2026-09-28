@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from src.collector.judilibre import run
 from src.collector.judilibre.run import DEFAULT_WINDOW_DAYS, build_parser, compute_window
 
 TODAY = date(2026, 9, 27)
@@ -47,3 +48,18 @@ def test_start_apres_end_n_est_pas_ramene_a_end():
     start, end = compute_window(TODAY, TODAY, 0)
     assert start == date(2026, 9, 28)
     assert start > end
+
+
+class FakeStore:
+    def __init__(self, dsn):
+        self.dsn = dsn
+
+
+def test_main_lit_argv_et_non_sys_argv(monkeypatch, capsys):
+    # Dans un worker Celery, sys.argv contient la ligne de commande de Celery.
+    monkeypatch.setattr("sys.argv", ["celery", "worker", "--concurrency=1"])
+    monkeypatch.setattr(run, "load_dotenv", lambda: None)
+    monkeypatch.setattr(run, "BronzeStore", FakeStore)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    run.main(argv=["--start", "2026-09-10", "--end", "2026-09-01"])
+    assert "Rien à collecter" in capsys.readouterr().out

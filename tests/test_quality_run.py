@@ -3,7 +3,9 @@ from decimal import Decimal
 from pathlib import Path
 
 import psycopg
+import pytest
 
+from src.quality import run
 from src.quality.checks import CHECKS_PATH, Check, Expectation
 from src.quality.evaluate import FAIL, NO_DATA, PASS, QUERY_ERROR, UNCHECKED, CheckResult
 from src.quality.run import execute_checks, format_report, parse_args, to_params
@@ -124,3 +126,18 @@ def test_une_requete_en_erreur_n_empeche_pas_les_suivantes():
     assert [(r.check_name, r.status) for r in results] == [("broken", QUERY_ERROR), ("ok", PASS)]
     assert conn.events[:3] == ["begin read only", "begin read only", "rollback to savepoint"]
     assert conn.read_only is False
+
+
+def test_main_lit_argv_et_non_sys_argv(monkeypatch):
+    class Stop(Exception):
+        pass
+
+    def load_checks(path):
+        raise Stop(path)
+
+    monkeypatch.setattr("sys.argv", ["celery", "worker", "--concurrency=1"])
+    monkeypatch.setattr(run, "load_dotenv", lambda: None)
+    monkeypatch.setattr(run, "load_checks", load_checks)
+    with pytest.raises(Stop) as excinfo:
+        run.main(argv=["--checks", "tmp/broken.yml"])
+    assert excinfo.value.args == (Path("tmp/broken.yml"),)
