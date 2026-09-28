@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: legal-postgres
+    uid: legal-postgres  # référencé par tous les panneaux des tableaux de bord
+    type: grafana-postgresql-datasource
+    url: postgres:5432
+    user: grafana_reader  # rôle en lecture seule (sql/007_grafana_reader.sql)
+    secureJsonData:
+      password: ${GRAFANA_DB_PASSWORD}  # interpolé par Grafana au démarrage, jamais versionné
+    jsonData:
+      database: legal
+      sslmode: disable  # réseau interne de Compose
+      postgresVersion: 1600
+      maxOpenConns: 5
+    isDefault: true
+    editable: false

@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: legal-data-pipeline
+    type: file
+    folder: legal-data-pipeline
+    disableDeletion: true
+    # Une modification faite dans l'interface ne peut pas être enregistrée :
+    # exporter le JSON dans grafana/dashboards/ pour la conserver (voir le README).
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
