@@ -9,7 +9,7 @@ ROOT = Path(__file__).parent.parent
 DASHBOARDS = sorted((ROOT / "grafana" / "dashboards").glob("*.json"))
 DATASOURCES = ROOT / "grafana" / "provisioning" / "datasources" / "postgres.yml"
 
-EXPECTED_UIDS = {"pipeline-health", "collection", "quality"}
+EXPECTED_UIDS = {"pipeline-health", "collection", "quality", "search"}
 WRITE_KEYWORDS = (
     "INSERT", "UPDATE", "DELETE", "MERGE", "UPSERT", "TRUNCATE", "DROP", "ALTER", "CREATE",
     "GRANT", "REVOKE", "COPY", "CALL", "DO", "SET", "RESET", "LOCK", "VACUUM", "REFRESH",
