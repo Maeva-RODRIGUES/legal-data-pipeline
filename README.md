@@ -83,7 +83,7 @@ flowchart LR
 
 ## Lancer le projet
 ```bash
-cp .env.example .env            # puis renseigner JUDILIBRE_API_KEY
+cp .env.example .env            # puis renseigner JUDILIBRE_API_KEY, GRAFANA_ADMIN_PASSWORD et GRAFANA_DB_PASSWORD
 docker compose up -d            # ou : podman compose up -d
 pip install -r requirements-dev.txt
 pre-commit install
@@ -99,7 +99,7 @@ python -m src.quality.run                                 # contrôles qualité 
 uvicorn src.api.main:app                                  # API de recherche en lecture seule ; documentation : http://127.0.0.1:8000/docs
 ```
 
-`compose up -d` démarre aussi le pipeline planifié : Redis, le worker Celery et Beat (voir [Planification](#planification)). Après une modification du code, reconstruire leur image avec `podman compose up -d --build`. Renseigner `ADLC_OPENDATA_URL` dans `.env` pour l'ingestion hebdomadaire de l'open data.
+`compose up -d` démarre aussi le pipeline planifié : Redis, le worker Celery et Beat (voir [Planification](#planification)), ainsi que Grafana sur http://127.0.0.1:3000 (voir [Supervision](#supervision)) ; il refuse de démarrer si `GRAFANA_ADMIN_PASSWORD` ou `GRAFANA_DB_PASSWORD` est vide dans `.env`. Après une modification du code, reconstruire leur image avec `podman compose up -d --build`. Renseigner `ADLC_OPENDATA_URL` dans `.env` pour l'ingestion hebdomadaire de l'open data.
 
 Les scripts de `sql/` ne sont exécutés qu'à la création du volume PostgreSQL. Sur une base existante, appliquer à la main les migrations Silver, qualité et recherche (PowerShell) :
 ```powershell
@@ -108,6 +108,15 @@ Get-Content sql\004_quality.sql | podman exec -i legal-data-pipeline-postgres-1 
 Get-Content sql\005_search.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 Get-Content sql\006_findability.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
 ```
+
+Pour le rôle en lecture seule de Grafana, après avoir renseigné `GRAFANA_DB_PASSWORD` dans `.env` : recréer le conteneur PostgreSQL pour qu'il reçoive la variable (le volume est conservé), créer le rôle, puis fixer son mot de passe avec le script, qui le lit dans l'environnement du conteneur (il n'est jamais tapé ni affiché) :
+```powershell
+podman compose up -d postgres
+Get-Content sql\007_grafana_reader.sql | podman exec -i legal-data-pipeline-postgres-1 psql -U legal -d legal
+podman exec legal-data-pipeline-postgres-1 bash /docker-entrypoint-initdb.d/008_grafana_reader_password.sh
+podman compose up -d grafana
+```
+Le même script sert à changer ce mot de passe : modifier `.env`, recréer `postgres` et `grafana` (`podman compose up -d`), relancer le script.
 
 Sous Windows, utiliser `127.0.0.1` plutôt que `localhost` dans `DATABASE_URL` et `ELASTICSEARCH_URL` : `localhost` est d'abord résolu en IPv6 (`::1`), et la connexion au conteneur peut alors prendre plus de deux minutes avant de se rabattre sur l'IPv4.
 
@@ -173,10 +182,17 @@ sql/
 ├── 003_silver.sql            # schéma silver : table decisions
 ├── 004_quality.sql           # schéma quality : table check_results
 ├── 005_search.sql            # schéma search : table index_stats
-└── 006_findability.sql       # schéma search : tables findability_runs et findability_results
+├── 006_findability.sql       # schéma search : tables findability_runs et findability_results
+├── 007_grafana_reader.sql    # rôle grafana_reader : SELECT sur les 5 tables des tableaux de bord, sans mot de passe
+└── 008_grafana_reader_password.sh  # mot de passe de grafana_reader fixé depuis GRAFANA_DB_PASSWORD
+grafana/
+├── provisioning/
+│   ├── datasources/postgres.yml    # source de données PostgreSQL (uid legal-postgres, rôle grafana_reader)
+│   └── dashboards/dashboards.yml   # chargement au démarrage des tableaux de bord de grafana/dashboards/
+└── dashboards/               # tableaux de bord versionnés (JSON) : santé du pipeline, collecte, qualité, recherche
 tests/
 ├── fixtures/                 # page HTML et extrait JSON, pour tester sans appel réseau
-└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche, API, pipeline)
+└── test_*.py                 # un fichier par module (collecteurs, Silver, qualité, recherche, API, pipeline, Grafana)
 docs/
 ├── api/                      # copie de référence de la spécification OpenAPI de Judilibre
 ├── sources/                  # analyse des sources (structure des données, écarts constatés)
@@ -312,6 +328,27 @@ Chaque run du pipeline est journalisé dans `bronze.collection_runs` : source `p
 podman exec legal-data-pipeline-postgres-1 psql -U legal -d legal -P pager=off -c "SELECT run_id, date_type, status, error, started_at, finished_at FROM bronze.collection_runs WHERE source = 'pipeline' ORDER BY run_id DESC LIMIT 10"
 ```
 L'API les expose aussi : `GET /runs?source=pipeline` (filtre `status=skipped` accepté).
+
+## Supervision
+Grafana suit dans le temps ce que le pipeline enregistre déjà : runs, volumes collectés, contrôles qualité, index et trouvabilité. Il n'ajoute aucune donnée : il lit les tables existantes, en lecture seule. Spécification : [`docs/tasks/grafana.md`](docs/tasks/grafana.md).
+
+- **Service** `grafana` du `docker-compose.yml` : image OSS officielle `grafana/grafana:13.2.2`, port `127.0.0.1:3000` uniquement, données dans le volume `grafana-data`, fuseau `Europe/Paris`, ni accès anonyme ni appel sortant (statistiques d'usage, recherche de mises à jour).
+- **Connexion** : http://127.0.0.1:3000, utilisateur `admin`, mot de passe `GRAFANA_ADMIN_PASSWORD` de `.env`. Ce mot de passe n'est appliqué qu'à la création du volume `grafana-data` ; pour le changer ensuite : `podman exec legal-data-pipeline-grafana-1 grafana cli admin reset-admin-password <nouveau>`.
+- **Accès en lecture seule** : Grafana se connecte avec le rôle PostgreSQL `grafana_reader` ([`sql/007_grafana_reader.sql`](sql/007_grafana_reader.sql)), qui n'a que `USAGE` sur les schémas `bronze`, `quality` et `search`, et `SELECT` sur `bronze.collection_runs`, `quality.check_results`, `search.index_stats`, `search.findability_runs` et `search.findability_results` : ni les documents bruts, ni Silver. Ses transactions sont en lecture seule par défaut et ses requêtes limitées à 10 secondes. Aucun mot de passe n'est versionné : `sql/008_grafana_reader_password.sh` le fixe depuis `GRAFANA_DB_PASSWORD`, à la création du volume ou à la main (voir [Lancer le projet](#lancer-le-projet)), sans qu'il apparaisse dans les journaux de PostgreSQL.
+- **Tableaux de bord versionnés** : la source de données et les tableaux sont provisionnés au démarrage depuis [`grafana/`](grafana/), dans le dossier `legal-data-pipeline` de Grafana : un clone du projet obtient les mêmes tableaux, sans configuration manuelle.
+
+| Tableau | Ce qu'il montre |
+|---|---|
+| Santé du pipeline | statut et détail du dernier run (hors `skipped`), durée des runs, historique avec les erreurs, heures depuis le dernier succès de chaque étape (orange au-delà de 30 h, rouge au-delà des 168 h du contrôle de fraîcheur) |
+| Collecte | décisions lues, nouvelles et modifiées à chaque run, un panneau par source ; nouvelles et modifiées, toutes sources ; tableau des runs de collecte |
+| Qualité | état de chaque contrôle et source au fil des runs (`pass`, `unchecked`, `no_data`, `fail`, `query_error`) ; résultats en écart au dernier run ; valeurs de `empty_text`, `duplicate_decision_number` et `number_year_mismatch` avec le seuil en vigueur à chaque run, lu dans la colonne `expected` |
+| Recherche | décisions indexées par source à chaque reconstruction basculée ; tableau des reconstructions ; trouvabilité par numéro et par titre (hit@1, hit@10, MRR) ; hit@1 par titre selon le groupe (titre ambigu ou non, texte présent ou non) |
+
+**Modifier un tableau de bord** : Grafana refuse d'enregistrer un tableau provisionné, car les fichiers du dépôt font foi. Pour conserver une modification faite dans l'interface : *Export › Export as JSON*, **sans** l'option d'export pour un partage externe (elle remplacerait la source de données par une variable `${DS_...}`), puis remplacer le fichier de `grafana/dashboards/`, lancer `pytest` et committer. Grafana recharge le fichier sous 30 secondes.
+
+Les tests (`tests/test_grafana_dashboards.py`, `tests/test_grafana_setup.py`) vérifient, sans Grafana ni base, que chaque tableau est un JSON valide au fuseau `Europe/Paris`, que chaque panneau utilise la source provisionnée et que chaque requête est une seule instruction `SELECT` ou `WITH`.
+
+Suite possible : des alertes Grafana (par exemple sur un run du pipeline en échec ou un contrôle `error` en `fail`), non mises en place faute de destinataire réel en local.
 
 ## Méthode de travail
 Le projet est développé avec l'aide de l'IA générative, selon deux modes :
