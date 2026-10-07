@@ -1,6 +1,6 @@
 httpx>=0.28.1
 psycopg[binary]>=3.3.6
-python-dotenv>=1.2.3
+python-dotenv>=1.2.4
 ijson>=3.5.1
 beautifulsoup4>=4.15.0
 lxml>=6.1.3
