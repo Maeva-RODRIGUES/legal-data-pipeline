@@ -1,5 +1,20 @@
 # legal-data-pipeline
 
+## Overview (English) 🇬🇧
+
+> The detailed documentation below is in French.
+
+Mini data pipeline for French legal decisions: multi-source collection, structuring and data quality checks.
+
+- **Bronze**: raw collection into PostgreSQL from three sources: the Judilibre API (French Supreme Court), the French Competition Authority open dataset (data.gouv.fr), and a freshness scraper of the Authority's website that flags decisions not yet published as open data.
+- **Silver**: Judilibre and open data decisions mapped to a common schema (6,707 decisions), fully rebuilt in a single transaction on each run.
+- **Data quality**: 9 SQL checks across 5 dimensions, declared in a YAML catalog with per-source expectations and severity levels. Results are historised, known gaps are separated from new ones, and a failing blocking check exits with code 1.
+- **Engineering**: incremental, idempotent collection with retries and a run log; CI with GitHub Actions (ruff, pytest), pre-commit, Dependabot.
+- **AI-assisted workflow**: built with Claude and Claude Code. I write the specs, review the agent's plans and code, and validate every pull request; each PR states what was delegated.
+
+**Highlights**: detected a deprecated API route and a default parameter that silently changed the collection scope; reduced a consistency check from 42 alerts (39 false positives) to the 3 real anomalies by identifying a numbering rule in the source data.
+
+
 ![CI](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/github/license/Maeva-RODRIGUES/legal-data-pipeline)
 
