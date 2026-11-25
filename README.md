@@ -4,15 +4,17 @@
 
 > The detailed documentation below is in French.
 
-Mini data pipeline for French legal decisions: multi-source collection, structuring and data quality checks.
+Mini data pipeline for French legal decisions: multi-source collection, structuring, data quality checks, search, scheduling and monitoring.
 
 - **Bronze**: raw collection into PostgreSQL from three sources: the Judilibre API (French Supreme Court), the French Competition Authority open dataset (data.gouv.fr), and a freshness scraper of the Authority's website that flags decisions not yet published as open data.
-- **Silver**: Judilibre and open data decisions mapped to a common schema (6,707 decisions), fully rebuilt in a single transaction on each run.
-- **Data quality**: 9 SQL checks across 5 dimensions, declared in a YAML catalog with per-source expectations and severity levels. Results are historised, known gaps are separated from new ones, and a failing blocking check exits with code 1.
-- **Engineering**: incremental, idempotent collection with retries and a run log; CI with GitHub Actions (ruff, pytest), pre-commit, Dependabot.
+- **Silver**: Judilibre and open data decisions mapped to a common schema (8,155 decisions), fully rebuilt in a single transaction on each run.
+- **Data quality**: 13 SQL checks across 5 dimensions (completeness, validity, uniqueness, consistency, freshness), declared in a YAML catalog with per-source expectations and severity levels. Results are historised, known gaps are separated from new ones, and a failing blocking check exits with code 1.
+- **Search**: Elasticsearch index rebuilt on each run, with an atomic alias switch only when counts match Silver, and a findability evaluation: 100% of decisions found by number, 100% of decisions with an unambiguous title ranked first by title. A read-only FastAPI API exposes search, decision details, runs and quality results.
+- **Orchestration & monitoring**: nightly run with Celery and Redis (3:33 a.m., Paris time), stopping at the first failing blocking step; four versioned Grafana dashboards backed by a read-only PostgreSQL role.
+- **Engineering**: incremental, idempotent collection with retries and a run log; 491 tests with no network calls; CI with GitHub Actions (ruff, pytest), pre-commit, Dependabot.
 - **AI-assisted workflow**: built with Claude and Claude Code. I write the specs, review the agent's plans and code, and validate every pull request; each PR states what was delegated.
 
-**Highlights**: detected a deprecated API route and a default parameter that silently changed the collection scope; reduced a consistency check from 42 alerts (39 false positives) to the 3 real anomalies by identifying a numbering rule in the source data.
+**Highlights**: detected a deprecated API route and a default parameter that silently changed the collection scope; reduced a consistency check from 42 alerts (39 false positives) to the 3 real anomalies by identifying a numbering rule in the source data; found that Judilibre publishes decisions several days late under a past update date (16 decisions in a two-day window on Sept 23, 127 on Sept 27), handled with a 14-day lookback window.
 
 
 ![CI](https://github.com/Maeva-RODRIGUES/legal-data-pipeline/actions/workflows/ci.yml/badge.svg)
